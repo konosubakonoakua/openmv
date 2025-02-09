@@ -1,24 +1,40 @@
 /*
- * This file is part of the OpenMV project.
+ * SPDX-License-Identifier: MIT
  *
- * Copyright (c) 2013-2021 Ibrahim Abdelkader <iabdalkader@openmv.io>
- * Copyright (c) 2013-2021 Kwabena W. Agyeman <kwagyeman@openmv.io>
+ * Copyright (C) 2013-2024 OpenMV, LLC.
  *
- * This work is licensed under the MIT license, see the file LICENSE for details.
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
  *
  * Phase correlation.
  */
 #include "imlib.h"
 #include "fft.h"
 
-void imlib_logpolar_int(image_t *dst, image_t *src, rectangle_t *roi, bool linear, bool reverse)
-{
+void imlib_logpolar_int(image_t *dst, image_t *src, rectangle_t *roi, bool linear, bool reverse) {
     int w = roi->w; // == dst_w
     int h = roi->h; // == dst_h
     int w_2 = w / 2;
     int h_2 = h / 2;
     float rho_scale = fast_sqrtf((w_2 * w_2) + (h_2 * h_2));
-    if (!linear) rho_scale = fast_log(rho_scale);
+    if (!linear) {
+        rho_scale = fast_log(rho_scale);
+    }
     const float m_pi_1_5 = 1.5f * M_PI;
     const float m_pi_1_5_d = IM_RAD2DEG(m_pi_1_5);
     const float m_pi_2_0 = 2.0f * M_PI;
@@ -38,21 +54,26 @@ void imlib_logpolar_int(image_t *dst, image_t *src, rectangle_t *roi, bool linea
                 for (int y = 0, yy = h; y < yy; y++) {
                     uint32_t *row_ptr = IMAGE_COMPUTE_BINARY_PIXEL_ROW_PTR(dst, y);
                     float rho = y * rho_scale;
-                    if (!linear) rho = fast_expf(rho);
+                    if (!linear) {
+                        rho = fast_expf(rho);
+                    }
                     for (int x = 0, xx = w_2; x < xx; x++) {
 
                         int theta = fast_roundf(m_pi_1_5_d - (x * theta_scale_d));
-                        if (theta < 0) theta += m_pi_2_0_d_i; // wrap for table access
+                        if (theta < 0) {
+                            theta += m_pi_2_0_d_i;            // wrap for table access
+                        }
                         int sourceX = tmp_x + fast_roundf(rho * cos_table[theta]); // rounding is necessary
                         int sourceY = tmp_y + fast_roundf(rho * sin_table[theta]); // rounding is necessary
 
-                        if ((0 <= sourceX) && (0 <= sourceY) && (sourceY < tmp_h)) { // plot the 2 symmetrical pixels
+                        if ((0 <= sourceX) && (0 <= sourceY) && (sourceY < tmp_h)) {
+                            // plot the 2 symmetrical pixels
                             uint32_t *ptr, pixel;
                             ptr = tmp + (((tmp_w + UINT32_T_MASK) >> UINT32_T_SHIFT) * sourceY);
                             pixel = IMAGE_GET_BINARY_PIXEL_FAST(ptr, sourceX);
                             IMAGE_PUT_BINARY_PIXEL_FAST(row_ptr, x, pixel);
-                            pixel = IMAGE_GET_BINARY_PIXEL_FAST(ptr, tmp_w-1-sourceX);
-                            IMAGE_PUT_BINARY_PIXEL_FAST(row_ptr, w-1-x, pixel);
+                            pixel = IMAGE_GET_BINARY_PIXEL_FAST(ptr, tmp_w - 1 - sourceX);
+                            IMAGE_PUT_BINARY_PIXEL_FAST(row_ptr, w - 1 - x, pixel);
                         }
                     }
                 }
@@ -65,15 +86,20 @@ void imlib_logpolar_int(image_t *dst, image_t *src, rectangle_t *roi, bool linea
                 for (int y = 0, yy = h; y < yy; y++) {
                     uint8_t *row_ptr = IMAGE_COMPUTE_GRAYSCALE_PIXEL_ROW_PTR(dst, y);
                     float rho = y * rho_scale;
-                    if (!linear) rho = fast_expf(rho);
+                    if (!linear) {
+                        rho = fast_expf(rho);
+                    }
                     for (int x = 0, xx = w_2; x < xx; x++) {
 
                         int theta = fast_roundf(m_pi_1_5_d - (x * theta_scale_d));
-                        if (theta < 0) theta += m_pi_2_0_d_i; // wrap for table access
+                        if (theta < 0) {
+                            theta += m_pi_2_0_d_i;            // wrap for table access
+                        }
                         int sourceX = tmp_x + fast_roundf(rho * cos_table[theta]); // rounding is necessary
                         int sourceY = tmp_y + fast_roundf(rho * sin_table[theta]); // rounding is necessary
 
-                        if ((0 <= sourceX) && (0 <= sourceY) && (sourceY < tmp_h)) { // plot the 2 symmetrical pixels
+                        if ((0 <= sourceX) && (0 <= sourceY) && (sourceY < tmp_h)) {
+                            // plot the 2 symmetrical pixels
                             uint8_t *ptr, pixel;
                             ptr = tmp + (tmp_w * sourceY);
                             pixel = ptr[sourceX];
@@ -92,15 +118,20 @@ void imlib_logpolar_int(image_t *dst, image_t *src, rectangle_t *roi, bool linea
                 for (int y = 0, yy = h; y < yy; y++) {
                     uint16_t *row_ptr = IMAGE_COMPUTE_RGB565_PIXEL_ROW_PTR(dst, y);
                     float rho = y * rho_scale;
-                    if (!linear) rho = fast_expf(rho);
+                    if (!linear) {
+                        rho = fast_expf(rho);
+                    }
                     for (int x = 0, xx = w_2; x < xx; x++) {
 
                         int theta = fast_roundf(m_pi_1_5_d - (x * theta_scale_d));
-                        if (theta < 0) theta += m_pi_2_0_d_i; // wrap for table access
+                        if (theta < 0) {
+                            theta += m_pi_2_0_d_i;            // wrap for table access
+                        }
                         int sourceX = tmp_x + fast_roundf(rho * cos_table[theta]); // rounding is necessary
                         int sourceY = tmp_y + fast_roundf(rho * sin_table[theta]); // rounding is necessary
 
-                        if ((0 <= sourceX) && (0 <= sourceY) && (sourceY < tmp_h)) { // plot the 2 symmetrical pixels
+                        if ((0 <= sourceX) && (0 <= sourceY) && (sourceY < tmp_h)) {
+                            // plot the 2 symmetrical pixels
                             uint16_t *ptr, pixel;
                             ptr = tmp + (tmp_w * sourceY);
                             pixel = ptr[sourceX];
@@ -133,7 +164,9 @@ void imlib_logpolar_int(image_t *dst, image_t *src, rectangle_t *roi, bool linea
                         int x_2_2 = x_2 * x_2;
 
                         float rho = fast_sqrtf(x_2_2 + y_2_2);
-                        if (!linear) rho = fast_log(rho);
+                        if (!linear) {
+                            rho = fast_log(rho);
+                        }
                         float theta = m_pi_1_5 - fast_atan2f(y_2, x_2);
                         int sourceX = tmp_x + fast_roundf(theta * theta_scale_inv); // rounding is necessary
                         int sourceY = tmp_y + fast_roundf(rho * rho_scale_inv); // rounding is necessary
@@ -143,8 +176,8 @@ void imlib_logpolar_int(image_t *dst, image_t *src, rectangle_t *roi, bool linea
                         ptr = tmp + (((tmp_w + UINT32_T_MASK) >> UINT32_T_SHIFT) * sourceY);
                         pixel = IMAGE_GET_BINARY_PIXEL_FAST(ptr, sourceX);
                         IMAGE_PUT_BINARY_PIXEL_FAST(row_ptr, x, pixel);
-                        pixel = IMAGE_GET_BINARY_PIXEL_FAST(ptr, tmp_w-1-sourceX);
-                        IMAGE_PUT_BINARY_PIXEL_FAST(row_ptr, w-1-x, pixel);
+                        pixel = IMAGE_GET_BINARY_PIXEL_FAST(ptr, tmp_w - 1 - sourceX);
+                        IMAGE_PUT_BINARY_PIXEL_FAST(row_ptr, w - 1 - x, pixel);
                     }
                 }
                 break;
@@ -163,7 +196,9 @@ void imlib_logpolar_int(image_t *dst, image_t *src, rectangle_t *roi, bool linea
                         int x_2_2 = x_2 * x_2;
 
                         float rho = fast_sqrtf(x_2_2 + y_2_2);
-                        if (!linear) rho = fast_log(rho);
+                        if (!linear) {
+                            rho = fast_log(rho);
+                        }
                         float theta = m_pi_1_5 - fast_atan2f(y_2, x_2);
                         int sourceX = tmp_x + fast_roundf(theta * theta_scale_inv); // rounding is necessary
                         int sourceY = tmp_y + fast_roundf(rho * rho_scale_inv); // rounding is necessary
@@ -193,7 +228,9 @@ void imlib_logpolar_int(image_t *dst, image_t *src, rectangle_t *roi, bool linea
                         int x_2_2 = x_2 * x_2;
 
                         float rho = fast_sqrtf(x_2_2 + y_2_2);
-                        if (!linear) rho = fast_log(rho);
+                        if (!linear) {
+                            rho = fast_log(rho);
+                        }
                         float theta = m_pi_1_5 - fast_atan2f(y_2, x_2);
                         int sourceX = tmp_x + fast_roundf(theta * theta_scale_inv); // rounding is necessary
                         int sourceY = tmp_y + fast_roundf(rho * rho_scale_inv); // rounding is necessary
@@ -217,8 +254,7 @@ void imlib_logpolar_int(image_t *dst, image_t *src, rectangle_t *roi, bool linea
 }
 
 #if defined(IMLIB_ENABLE_LOGPOLAR) || defined(IMLIB_ENABLE_LINPOLAR)
-void imlib_logpolar(image_t *img, bool linear, bool reverse)
-{
+void imlib_logpolar(image_t *img, bool linear, bool reverse) {
     image_t img_2;
     img_2.w = img->w;
     img_2.h = img->h;
@@ -243,9 +279,17 @@ void imlib_logpolar(image_t *img, bool linear, bool reverse)
 
 #ifdef IMLIB_ENABLE_FIND_DISPLACEMENT
 // Note that both ROI widths and heights must be equal.
-void imlib_phasecorrelate(image_t *img0, image_t *img1, rectangle_t *roi0, rectangle_t *roi1, bool logpolar, bool fix_rotation_scale,
-                          float *x_translation, float *y_translation, float *rotation, float *scale, float *response)
-{
+void imlib_phasecorrelate(image_t *img0,
+                          image_t *img1,
+                          rectangle_t *roi0,
+                          rectangle_t *roi1,
+                          bool logpolar,
+                          bool fix_rotation_scale,
+                          float *x_translation,
+                          float *y_translation,
+                          float *rotation,
+                          float *scale,
+                          float *response) {
     // Step 1 - Get Rotation/Scale Differences
     if ((!logpolar) && fix_rotation_scale) {
         fft2d_controller_t fft0, fft1;
@@ -272,16 +316,16 @@ void imlib_phasecorrelate(image_t *img0, image_t *img1, rectangle_t *roi0, recta
         int h = (1 << fft0.h_pow2);
 
         for (int i = 0, j = h * w * 2; i < j; i += 2) {
-            float ga_r = fft0.data[i+0];
-            float ga_i = fft0.data[i+1];
-            float gb_r = fft1.data[i+0];
-            float gb_i = -fft1.data[i+1]; // complex conjugate...
+            float ga_r = fft0.data[i + 0];
+            float ga_i = fft0.data[i + 1];
+            float gb_r = fft1.data[i + 0];
+            float gb_i = -fft1.data[i + 1]; // complex conjugate...
             float hp_r = (ga_r * gb_r) - (ga_i * gb_i); // hadamard product
             float hp_i = (ga_r * gb_i) + (ga_i * gb_r); // hadamard product
-            float mag = 1 / fast_sqrtf((hp_r*hp_r)+(hp_i*hp_i)); // magnitude
+            float mag = 1 / fast_sqrtf((hp_r * hp_r) + (hp_i * hp_i)); // magnitude
             // Replace first fft with phase correlation...
-            fft0.data[i+0] = hp_r * mag;
-            fft0.data[i+1] = hp_i * mag;
+            fft0.data[i + 0] = hp_r * mag;
+            fft0.data[i + 1] = hp_i * mag;
         }
 
         ifft2d_run(&fft0);
@@ -316,13 +360,21 @@ void imlib_phasecorrelate(image_t *img0, image_t *img1, rectangle_t *roi0, recta
 
                 // Wrap around
                 int new_x = off_x + j;
-                if (new_x < 0) new_x += w;
-                if (new_x >= w) new_x -= w;
+                if (new_x < 0) {
+                    new_x += w;
+                }
+                if (new_x >= w) {
+                    new_x -= w;
+                }
 
                 // Wrap around
                 int new_y = off_y + i;
-                if (new_y < 0) new_y += h;
-                if (new_y >= h) new_y -= h;
+                if (new_y < 0) {
+                    new_y += h;
+                }
+                if (new_y >= h) {
+                    new_y -= h;
+                }
 
                 // Compute centroid.
                 float f_r = fft0.data[(new_y * w * 2) + new_x];
@@ -336,29 +388,30 @@ void imlib_phasecorrelate(image_t *img0, image_t *img1, rectangle_t *roi0, recta
         f_off_y /= f_sum;
 
         // FFT Shift X
-        if (f_off_x >= (w/2.0f)) {
+        if (f_off_x >= (w / 2.0f)) {
             f_off_x = f_off_x - w;
         } else {
             f_off_x = f_off_x;
         }
 
         // FFT Shift Y
-        if (f_off_y >= (h/2.0f)) {
+        if (f_off_y >= (h / 2.0f)) {
             f_off_y = -(f_off_y - h);
         } else {
             f_off_y = -f_off_y;
         }
 
-        if ((f_off_x < (-w/2.0f))
-        || ((w/2.0f) <= f_off_x)
-        || (f_off_y < (-h/2.0f))
-        || ((h/2.0f) <= f_off_y)
-        || isnanf(f_off_x)
-        || isinff(f_off_x)
-        || isnanf(f_off_y)
-        || isinff(f_off_y)
-        || isnanf(tmp_response)
-        || isinff(tmp_response)) { // Noise Filter
+        if ((f_off_x < (-w / 2.0f))
+            || ((w / 2.0f) <= f_off_x)
+            || (f_off_y < (-h / 2.0f))
+            || ((h / 2.0f) <= f_off_y)
+            || isnanf(f_off_x)
+            || isinff(f_off_x)
+            || isnanf(f_off_y)
+            || isinff(f_off_y)
+            || isnanf(tmp_response)
+            || isinff(tmp_response)) {
+            // Noise Filter
             f_off_x = 0;
             f_off_y = 0;
             tmp_response = 0;
@@ -474,15 +527,15 @@ void imlib_phasecorrelate(image_t *img0, image_t *img1, rectangle_t *roi0, recta
         int h = (1 << fft0.h_pow2);
 
         for (int i = 0, j = h * w * 2; i < j; i += 2) {
-            float ga_r = fft0.data[i+0];
-            float ga_i = fft0.data[i+1];
-            float gb_r = fft1.data[i+0];
-            float gb_i = -fft1.data[i+1]; // complex conjugate...
+            float ga_r = fft0.data[i + 0];
+            float ga_i = fft0.data[i + 1];
+            float gb_r = fft1.data[i + 0];
+            float gb_i = -fft1.data[i + 1]; // complex conjugate...
             float hp_r = (ga_r * gb_r) - (ga_i * gb_i); // hadamard product
             float hp_i = (ga_r * gb_i) + (ga_i * gb_r); // hadamard product
-            float mag = 1 / fast_sqrtf((hp_r*hp_r)+(hp_i*hp_i)); // magnitude
-            fft0.data[i+0] = hp_r * mag;
-            fft0.data[i+1] = hp_i * mag;
+            float mag = 1 / fast_sqrtf((hp_r * hp_r) + (hp_i * hp_i)); // magnitude
+            fft0.data[i + 0] = hp_r * mag;
+            fft0.data[i + 1] = hp_i * mag;
         }
 
         ifft2d_run(&fft0);
@@ -517,13 +570,21 @@ void imlib_phasecorrelate(image_t *img0, image_t *img1, rectangle_t *roi0, recta
 
                 // Wrap around
                 int new_x = off_x + j;
-                if (new_x < 0) new_x += w;
-                if (new_x >= w) new_x -= w;
+                if (new_x < 0) {
+                    new_x += w;
+                }
+                if (new_x >= w) {
+                    new_x -= w;
+                }
 
                 // Wrap around
                 int new_y = off_y + i;
-                if (new_y < 0) new_y += h;
-                if (new_y >= h) new_y -= h;
+                if (new_y < 0) {
+                    new_y += h;
+                }
+                if (new_y >= h) {
+                    new_y -= h;
+                }
 
                 // Compute centroid.
                 float f_r = fft0.data[(new_y * w * 2) + new_x];
@@ -537,29 +598,30 @@ void imlib_phasecorrelate(image_t *img0, image_t *img1, rectangle_t *roi0, recta
         f_off_y /= f_sum;
 
         // FFT Shift X
-        if (f_off_x >= (w/2.0f)) {
+        if (f_off_x >= (w / 2.0f)) {
             *x_translation = f_off_x - w;
         } else {
             *x_translation = f_off_x;
         }
 
         // FFT Shift Y
-        if (f_off_y >= (h/2.0f)) {
+        if (f_off_y >= (h / 2.0f)) {
             *y_translation = -(f_off_y - h);
         } else {
             *y_translation = -f_off_y;
         }
 
-        if ((*x_translation < (-w/2.0f))
-        || ((w/2.0f) <= *x_translation)
-        || (*y_translation < (-h/2.0f))
-        || ((h/2.0f) <= *y_translation)
-        || isnanf(*x_translation)
-        || isinff(*x_translation)
-        || isnanf(*y_translation)
-        || isinff(*y_translation)
-        || isnanf(*response)
-        || isinff(*response)) { // Noise Filter
+        if ((*x_translation < (-w / 2.0f))
+            || ((w / 2.0f) <= *x_translation)
+            || (*y_translation < (-h / 2.0f))
+            || ((h / 2.0f) <= *y_translation)
+            || isnanf(*x_translation)
+            || isinff(*x_translation)
+            || isnanf(*y_translation)
+            || isinff(*y_translation)
+            || isnanf(*response)
+            || isinff(*response)) {
+            // Noise Filter
             *x_translation = 0;
             *y_translation = 0;
             *response = 0;
@@ -584,6 +646,8 @@ void imlib_phasecorrelate(image_t *img0, image_t *img1, rectangle_t *roi0, recta
         }
     }
 
-    if ((!logpolar) && fix_rotation_scale) fb_free();
+    if ((!logpolar) && fix_rotation_scale) {
+        fb_free();
+    }
 }
 #endif //IMLIB_ENABLE_FIND_DISPLACEMENT

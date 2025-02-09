@@ -23,12 +23,6 @@
 // Enable YUV LUT
 //#define IMLIB_ENABLE_YUV_LUT
 
-// Enable mean pooling
-#define IMLIB_ENABLE_MEAN_POOLING
-
-// Enable midpoint pooling
-#define IMLIB_ENABLE_MIDPOINT_POOLING
-
 // Enable ISP ops
 #define IMLIB_ENABLE_ISP_OPS
 
@@ -64,9 +58,6 @@
 
 // Enable bilateral()
 #define IMLIB_ENABLE_BILATERAL
-
-// Enable cartoon()
-// #define IMLIB_ENABLE_CARTOON
 
 // Enable linpolar()
 #define IMLIB_ENABLE_LINPOLAR
@@ -105,6 +96,7 @@
 
 // Enable find_apriltags() (64 KB)
 #define IMLIB_ENABLE_APRILTAGS
+#define IMLIB_ENABLE_APRILTAGS_TAG36H11
 
 // Enable fine find_apriltags() - (8-way connectivity versus 4-way connectivity)
 // #define IMLIB_ENABLE_FINE_APRILTAGS
@@ -118,18 +110,18 @@
 // Enable find_barcodes() (42 KB)
 #define IMLIB_ENABLE_BARCODES
 
-// Enable CMSIS NN
-// #if !defined(CUBEAI)
-// #define IMLIB_ENABLE_CNN
-// #endif
+// Enable find_features() and built-in Haar cascades. (75KBs)
+#define IMLIB_ENABLE_FEATURES
+#define IMLIB_ENABLE_FEATURES_BUILTIN_FACE_CASCADE
+//#define IMLIB_ENABLE_FEATURES_BUILTIN_EYES_CASCADE
 
 // Enable Tensor Flow
 #if !defined(CUBEAI)
-#define IMLIB_ENABLE_TF
+#define IMLIB_ENABLE_TFLM_BUILTIN_FOMO_FACE_DETECTION
 #endif
 
-// Enable FAST (20+ KBs).
-#define IMLIB_ENABLE_FAST
+// Enable AGAST.
+#define IMLIB_ENABLE_AGAST
 
 // Enable find_template()
 #define IMLIB_FIND_TEMPLATE
@@ -138,16 +130,15 @@
 #define IMLIB_ENABLE_FIND_LBP
 
 // Enable find_keypoints()
+#if defined(IMLIB_ENABLE_FAST) || defined(IMLIB_ENABLE_AGAST)
 #define IMLIB_ENABLE_FIND_KEYPOINTS
+#endif
 
 // Enable load, save and match descriptor
 #define IMLIB_ENABLE_DESCRIPTOR
 
 // Enable find_hog()
 // #define IMLIB_ENABLE_HOG
-
-// Enable STM32 DMA2D
-#define IMLIB_ENABLE_DMA2D
 
 // Enable PNG encoder/decoder
 #define IMLIB_ENABLE_PNG_ENCODER

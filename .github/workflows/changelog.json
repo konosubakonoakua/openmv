@@ -5,6 +5,10 @@
        "labels": ["github"]
      },
      {
+       "title": "## ⚠️  Breaking Changes",
+       "labels": ["breaking"]
+     },
+     {
        "title": "## 🪄 Image",
        "labels": ["imlib"]
      },
@@ -23,6 +27,10 @@
      {
        "title": "## 💾 Drivers",
        "labels": ["drivers"]
+     },
+     {
+       "title": "## 🧱 Modules",
+       "labels": ["modules"]
      },
      {
        "title": "## 🐍 Micropython",
@@ -94,6 +102,12 @@
         "on_property": "title"
       },
       {
+        "pattern": "(^modules)(.+)",
+        "method": "replace",
+        "target": "$1",
+        "on_property": "title"
+      },
+      {
         "pattern": "(^micropython)(.+)",
         "method": "replace",
         "target": "$1",
@@ -128,6 +142,12 @@
         "method": "replace",
         "target": "bootloader",
         "on_property": "title"
+      },
+      {
+        "pattern": "(^breaking)",
+        "method": "replace",
+        "target": "$1",
+        "on_property": "labels"
       }
     ],
     "transformers": [

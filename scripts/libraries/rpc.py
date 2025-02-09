@@ -6,12 +6,11 @@
 # This work is licensed under the MIT license, see the file LICENSE for details.
 
 import gc
+import machine
 import omv
-import pyb
 import select
-import socket
-import stm
 import struct
+import time
 
 
 class rpc:
@@ -32,6 +31,7 @@ class rpc:
 
     @micropython.viper
     def __stm_crc_16(self, data, size: int) -> int:  # private
+        import stm
         ptr32(stm.CRC + stm.CRC_CR)[0] = (1 << 3) | 1
         crc8 = ptr8(stm.CRC + stm.CRC_DR)
         d = ptr8(data)
@@ -70,10 +70,12 @@ class rpc:
     def __init__(self):  # private
         self.__crc_16 = self.__def_crc_16
         if omv.board_type() == "H7":
+            import stm
             stm.mem32[stm.RCC + stm.RCC_AHB4ENR] = stm.mem32[stm.RCC + stm.RCC_AHB4ENR] | (1 << 19)
             stm.mem32[stm.CRC + stm.CRC_POL] = 0x1021
             self.__crc_16 = self.__stm_crc_16
         elif omv.board_type() == "F7":
+            import stm
             stm.mem32[stm.RCC + stm.RCC_AHB1ENR] = stm.mem32[stm.RCC + stm.RCC_AHB1ENR] | (1 << 12)
             stm.mem32[stm.CRC + stm.CRC_POL] = 0x1021
             self.__crc_16 = self.__stm_crc_16
@@ -195,8 +197,8 @@ class rpc_master(rpc):
             self._COMMAND_HEADER_PACKET_MAGIC, struct.pack("<II", command, len(data))
         )
         out_data = self._set_packet(self._COMMAND_DATA_PACKET_MAGIC, data)
-        start = pyb.millis()
-        while pyb.elapsed_millis(start) < timeout:
+        start = time.ticks_ms()
+        while time.ticks_diff(time.ticks_ms(), start) < timeout:
             gc.collect()  # Avoid collection during the transfer.
             self._zero(self.__in_command_header_buf[0], len(self.__in_command_header_buf[0]))
             self._zero(self.__in_command_data_buf[0], len(self.__in_command_data_buf[0]))
@@ -228,8 +230,8 @@ class rpc_master(rpc):
     def __get_result(self, timeout):  # private
         self._put_short_timeout = self._put_short_timeout_reset
         self._get_short_timeout = self._get_short_timeout_reset
-        start = pyb.millis()
-        while pyb.elapsed_millis(start) < timeout:
+        start = time.ticks_ms()
+        while time.ticks_diff(time.ticks_ms(), start) < timeout:
             gc.collect()  # Avoid collection during the transfer.
             self._zero(self.__in_result_header_buf[0], len(self.__in_result_header_buf[0]))
             self._flush()
@@ -279,8 +281,8 @@ class rpc_slave(rpc):
     def __get_command(self, timeout):  # private
         self._put_short_timeout = self._put_short_timeout_reset
         self._get_short_timeout = self._get_short_timeout_reset
-        start = pyb.millis()
-        while pyb.elapsed_millis(start) < timeout:
+        start = time.ticks_ms()
+        while time.ticks_diff(time.ticks_ms(), start) < timeout:
             gc.collect()  # Avoid collection during the transfer.
             self._zero(self.__in_command_header_buf[0], len(self.__in_command_header_buf[0]))
             self._flush()
@@ -311,8 +313,8 @@ class rpc_slave(rpc):
             self._RESULT_HEADER_PACKET_MAGIC, struct.pack("<I", len(data))
         )
         out_data = self._set_packet(self._RESULT_DATA_PACKET_MAGIC, data)
-        start = pyb.millis()
-        while pyb.elapsed_millis(start) < timeout:
+        start = time.ticks_ms()
+        while time.ticks_diff(time.ticks_ms(), start) < timeout:
             gc.collect()  # Avoid collection during the transfer.
             self._zero(self.__in_response_header_buf[0], len(self.__in_response_header_buf[0]))
             self._zero(self.__in_response_data_buf[0], len(self.__in_response_data_buf[0]))
@@ -367,6 +369,7 @@ class rpc_slave(rpc):
 
 class rpc_can_master(rpc_master):
     def __init__(self, message_id=0x7FF, bit_rate=250000, sample_point=75, can_bus=2):
+        import pyb
         self.__message_id = message_id
         self.__can = pyb.CAN(
             can_bus,
@@ -398,10 +401,10 @@ class rpc_can_master(rpc_master):
                 if id == self.__message_id and rtr == 0 and fmi == 0 and len(data) == expected:
                     buff[i : i + 8] = data
                 else:
-                    pyb.delay(self._get_short_timeout)
+                    time.sleep_ms(self._get_short_timeout)
                     return None
             except OSError:
-                pyb.delay(self._get_short_timeout)
+                time.sleep_ms(self._get_short_timeout)
                 return None
         return buff
 
@@ -416,6 +419,7 @@ class rpc_can_master(rpc_master):
 
 class rpc_can_slave(rpc_slave):
     def __init__(self, message_id=0x7FF, bit_rate=250000, sample_point=75, can_bus=2):
+        import pyb
         self.__message_id = message_id
         self.__can = pyb.CAN(
             can_bus,
@@ -465,48 +469,46 @@ class rpc_i2c_master(rpc_master):
     def __init__(self, slave_addr=0x12, rate=100000, i2c_bus=2):  # private
         self.__addr = slave_addr
         self.__freq = rate
-        self.__i2c = pyb.I2C(i2c_bus)
+        self.__i2c = machine.I2C(i2c_bus, freq=self.__freq)
         rpc_master.__init__(self)
         self._stream_writer_queue_depth_max = 1
 
     def get_bytes(self, buff, timeout_ms):  # protected
         view = memoryview(buff)
         for i in range(0, len(view), 65535):
-            pyb.udelay(100)  # Give slave time to get ready.
-            self.__i2c.init(pyb.I2C.MASTER, baudrate=self.__freq, dma=True)
+            time.sleep_us(100)  # Give slave time to get ready.
             try:
-                self.__i2c.recv(view[i : i + 65535], self.__addr, timeout=timeout_ms)
+                self.__i2c.readfrom_into(self.__addr, view[i : i + 65535])
             except OSError:
                 view = None
-            self.__i2c.deinit()
             if view is None:
                 break
         if view is None or self._same(view, len(view)):
-            pyb.delay(self._get_short_timeout)
+            time.sleep_ms(self._get_short_timeout)
         return view
 
     def put_bytes(self, data, timeout_ms):  # protected
         view = memoryview(data)
         for i in range(0, len(view), 65535):
-            pyb.udelay(100)  # Give slave time to get ready.
-            self.__i2c.init(pyb.I2C.MASTER, baudrate=self.__freq, dma=True)
+            time.sleep_us(100)  # Give slave time to get ready.
             try:
-                self.__i2c.send(view[i : i + 65535], self.__addr, timeout=timeout_ms)
+                self.__i2c.writeto(self.__addr, view[i : i + 65535])
             except OSError:
                 view = None
-            self.__i2c.deinit()
             if view is None:
                 break
 
 
 class rpc_i2c_slave(rpc_slave):
     def __init__(self, slave_addr=0x12, i2c_bus=2):  # private
+        import pyb
         self.__addr = slave_addr
         self.__i2c = pyb.I2C(i2c_bus)
         rpc_slave.__init__(self)
         self._stream_writer_queue_depth_max = 1
 
     def get_bytes(self, buff, timeout_ms):  # protected
+        import pyb
         view = memoryview(buff)
         for i in range(0, len(view), 65535):
             self.__i2c.init(pyb.I2C.SLAVE, addr=self.__addr, dma=True)
@@ -520,6 +522,7 @@ class rpc_i2c_slave(rpc_slave):
         return view
 
     def put_bytes(self, data, timeout_ms):  # protected
+        import pyb
         view = memoryview(data)
         for i in range(0, len(view), 65535):
             self.__i2c.init(pyb.I2C.SLAVE, addr=self.__addr, dma=True)
@@ -536,38 +539,38 @@ class rpc_spi_master(rpc_master):
     def __init__(
         self, cs_pin="P3", freq=1000000, clk_polarity=1, clk_phase=0, spi_bus=2
     ):  # private
-        self.__pin = pyb.Pin(cs_pin, pyb.Pin.OUT_PP)
+        self.__pin = machine.Pin(cs_pin, machine.Pin.OUT)
         self.__freq = freq
         self.__polarity = clk_polarity
         self.__clk_phase = clk_phase
-        self.__spi = pyb.SPI(spi_bus)
+        self.__spi = machine.SPI(spi_bus)
         rpc_master.__init__(self)
         self._stream_writer_queue_depth_max = 1
 
     def get_bytes(self, buff, timeout_ms):  # protected
         self.__pin.value(False)
-        pyb.udelay(100)  # Give slave time to get ready.
+        time.sleep_us(100)  # Give slave time to get ready.
         self.__spi.init(
-            pyb.SPI.MASTER, self.__freq, polarity=self.__polarity, phase=self.__clk_phase
+            baudrate=self.__freq, polarity=self.__polarity, phase=self.__clk_phase
         )
         try:
-            self.__spi.send_recv(buff, buff, timeout=timeout_ms)  # SPI.recv() is broken.
+            self.__spi.write_readinto(buff, buff)  # SPI.readinto() is broken.
         except OSError:
             buff = None
         self.__spi.deinit()
         self.__pin.value(True)
         if buff is None or self._same(buff, len(buff)):
-            pyb.delay(self._get_short_timeout)
+            time.sleep_ms(self._get_short_timeout)
         return buff
 
     def put_bytes(self, data, timeout_ms):  # protected
         self.__pin.value(False)
-        pyb.udelay(100)  # Give slave time to get ready.
+        time.sleep_us(100)  # Give slave time to get ready.
         self.__spi.init(
-            pyb.SPI.MASTER, self.__freq, polarity=self.__polarity, phase=self.__clk_phase
+            baudrate=self.__freq, polarity=self.__polarity, phase=self.__clk_phase
         )
         try:
-            self.__spi.send(data, timeout=timeout_ms)
+            self.__spi.write(data)
         except OSError:
             pass
         self.__spi.deinit()
@@ -576,6 +579,7 @@ class rpc_spi_master(rpc_master):
 
 class rpc_spi_slave(rpc_slave):
     def __init__(self, cs_pin="P3", clk_polarity=1, clk_phase=0, spi_bus=2):  # private
+        import pyb
         self.__pin = pyb.Pin(cs_pin, pyb.Pin.IN)
         self.__polarity = clk_polarity
         self.__clk_phase = clk_phase
@@ -584,6 +588,7 @@ class rpc_spi_slave(rpc_slave):
         self._stream_writer_queue_depth_max = 1
 
     def get_bytes(self, buff, timeout_ms):  # protected
+        import pyb
         start = pyb.millis()
         while self.__pin.value():
             if pyb.elapsed_millis(start) >= self._get_short_timeout:
@@ -597,6 +602,7 @@ class rpc_spi_slave(rpc_slave):
         return buff
 
     def put_bytes(self, data, timeout_ms):  # protected
+        import pyb
         start = pyb.millis()
         while self.__pin.value():
             if pyb.elapsed_millis(start) >= self._put_short_timeout:
@@ -611,7 +617,7 @@ class rpc_spi_slave(rpc_slave):
 
 class rpc_uart_master(rpc_master):
     def __init__(self, baudrate=9600, uart_port=3):  # private
-        self.__uart = pyb.UART(uart_port, baudrate, timeout=2, timeout_char=2)
+        self.__uart = machine.UART(uart_port, baudrate, timeout=2, timeout_char=2)
         rpc_master.__init__(self)
 
     def _flush(self):  # protected
@@ -619,7 +625,7 @@ class rpc_uart_master(rpc_master):
 
     def get_bytes(self, buff, timeout_ms):  # protected
         if self.__uart.readinto(buff) is None:
-            pyb.delay(self._get_short_timeout)
+            time.sleep_ms(self._get_short_timeout)
             return None
         return buff
 
@@ -635,7 +641,7 @@ class rpc_uart_master(rpc_master):
 
 class rpc_uart_slave(rpc_slave):
     def __init__(self, baudrate=9600, uart_port=3):  # private
-        self.__uart = pyb.UART(uart_port, baudrate, timeout=2, timeout_char=2)
+        self.__uart = machine.UART(uart_port, baudrate, timeout=2, timeout_char=2)
         rpc_slave.__init__(self)
 
     def _flush(self):  # protected
@@ -654,390 +660,3 @@ class rpc_uart_slave(rpc_slave):
         p.register(self.__uart, select.POLLIN)
         p.poll(1000)
         return self.get_bytes(buff, timeout_ms)
-
-
-class rpc_usb_vcp_master(rpc_master):
-    def __init__(self):  # private
-        self.__usb_vcp = pyb.USB_VCP()
-        if self.__usb_vcp.debug_mode_enabled():
-            raise OSError("You cannot use the USB VCP while the IDE is connected!")
-        self.__usb_vcp.setinterrupt(-1)
-        rpc_master.__init__(self)
-
-    def _flush(self):  # protected
-        self.__usb_vcp.read()
-
-    def get_bytes(self, buff, timeout_ms):  # protected
-        if self.__usb_vcp.recv(buff, timeout=timeout_ms) != len(buff):
-            return None
-        return buff
-
-    def put_bytes(self, data, timeout_ms):  # protected
-        self.__usb_vcp.send(data, timeout=timeout_ms)
-
-
-class rpc_usb_vcp_slave(rpc_slave):
-    def __init__(self):  # private
-        self.__usb_vcp = pyb.USB_VCP()
-        if self.__usb_vcp.debug_mode_enabled():
-            raise OSError("You cannot use the USB VCP while the IDE is connected!")
-        self.__usb_vcp.setinterrupt(-1)
-        rpc_slave.__init__(self)
-
-    def _flush(self):  # protected
-        self.__usb_vcp.read()
-
-    def get_bytes(self, buff, timeout_ms):  # protected
-        if self.__usb_vcp.recv(buff, timeout=timeout_ms) != len(buff):
-            return None
-        return buff
-
-    def put_bytes(self, data, timeout_ms):  # protected
-        self.__usb_vcp.send(data, timeout=timeout_ms)
-
-
-class rpc_network_master(rpc_master):
-    def __valid_tcp_socket(self):  # private
-        if self.__tcp__socket is None:
-            try:
-                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                s.bind(self.__myaddr)
-                s.listen(0)
-                s.settimeout(1)
-                self.__tcp__socket, addr = s.accept()
-                s.close()
-            except OSError:
-                self.__tcp__socket = None
-        return self.__tcp__socket is not None
-
-    def __close_tcp_socket(self):  # private
-        self.__tcp__socket.close()
-        self.__tcp__socket = None
-
-    def __valid_udp_socket(self):  # private
-        if self.__udp__socket is None:
-            try:
-                self.__udp__socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                self.__udp__socket.bind(self.__myaddr)
-            except OSError:
-                self.__udp__socket = None
-        return self.__udp__socket is not None
-
-    def __close_udp_socket(self):  # private
-        self.__udp__socket.close()
-        self.__udp__socket = None
-
-    def __init__(self, network_if, port=0x1DBA):  # private
-        self._udp_limit = 1400
-        self._timeout_scale = 10
-        self.__network = network_if
-        self.__myip = self.__network.ifconfig()[0]
-        self.__myaddr = (self.__myip, port)
-        self.__slave_addr = (ip, port)
-        self.__tcp__socket = None
-        self.__udp__socket = None
-        print("IP Address:Port %s:%d\nRunning..." % self.__myaddr)
-        rpc_master.__init__(self)
-
-    def _flush(self):  # protected
-        if self.__valid_udp_socket():
-            try:
-                self.__udp__socket.settimeout(0.001)
-                while True:
-                    data, addr = self.__udp__socket.recvfrom(1400)
-                    if not len(data):
-                        break
-            except OSError:
-                self.__close_udp_socket()
-        if self.__tcp__socket is not None:
-            try:
-                self.__tcp__socket.settimeout(0.001)
-                while True:
-                    data = self.__tcp__socket.recv(1400)
-                    if not len(data):
-                        break
-            except OSError:
-                self.__close_tcp_socket()
-
-    def get_bytes(self, buff, timeout_ms):  # protected
-        i = 0
-        l = len(buff)
-        if l <= self._udp_limit:
-            if self.__valid_udp_socket():
-                try:
-                    self.__udp__socket.settimeout(
-                        self._get_short_timeout * 0.001 * self._timeout_scale
-                    )
-                    while l:
-                        data, addr = self.__udp__socket.recvfrom(min(l, 1400))
-                        data_len = len(data)
-                        if not data_len:
-                            break
-                        buff[i : i + data_len] = data
-                        i += data_len
-                        l -= data_len
-                    # We don't need to close the socket on error since it's connectionless.
-                except OSError:
-                    self.__close_udp_socket()
-        elif self.__valid_tcp_socket():
-            try:
-                self.__tcp__socket.settimeout(timeout_ms * 0.001)
-                while l:
-                    data = self.__tcp__socket.recv(min(l, 1400))
-                    data_len = len(data)
-                    if not data_len:
-                        break
-                    buff[i : i + data_len] = data
-                    i += data_len
-                    l -= data_len
-                if l:
-                    self.__close_tcp_socket()
-            except OSError:
-                self.__close_tcp_socket()
-        return buff if not l else None
-
-    def put_bytes(self, data, timeout_ms):  # protected
-        i = 0
-        l = len(data)
-        if l <= self._udp_limit:
-            if self.__valid_udp_socket():
-                try:
-                    self.__udp__socket.settimeout(
-                        self._put_short_timeout * 0.001 * self._timeout_scale
-                    )
-                    while l:
-                        data_len = self.__udp__socket.sendto(
-                            data[i : i + min(l, 1400)], self.__slave_addr
-                        )
-                        if not data_len:
-                            break
-                        i += data_len
-                        l -= data_len
-                    if l:
-                        self.__close_udp_socket()
-                except OSError:
-                    self.__close_udp_socket()
-        elif self.__valid_tcp_socket():
-            try:
-                self.__tcp__socket.settimeout(timeout_ms * 0.001)
-                while l:
-                    data_len = self.__tcp__socket.send(data[i : i + min(l, 1400)])
-                    if not data_len:
-                        break
-                    i += data_len
-                    l -= data_len
-                if l:
-                    self.__close_tcp_socket()
-            except OSError:
-                self.__close_tcp_socket()
-
-    def _stream_get_bytes(self, buff, timeout_ms):  # protected
-        i = 0
-        l = len(buff)
-        if self.__valid_tcp_socket():
-            try:
-                self.__tcp__socket.settimeout(timeout_ms * 0.001)
-                while l:
-                    data = self.__tcp__socket.recv(min(l, 1400))
-                    data_len = len(data)
-                    if not data_len:
-                        break
-                    buff[i : i + data_len] = data
-                    i += data_len
-                    l -= data_len
-                if l:
-                    self.__close_tcp_socket()
-            except OSError:
-                self.__close_tcp_socket()
-        return buff if not l else None
-
-    def _stream_put_bytes(self, data, timeout_ms):  # protected
-        i = 0
-        l = len(data)
-        if self.__valid_tcp_socket():
-            try:
-                self.__tcp__socket.settimeout(timeout_ms * 0.001)
-                while l:
-                    data_len = self.__tcp__socket.send(data[i : i + min(l, 1400)])
-                    if not data_len:
-                        break
-                    i += data_len
-                    l -= data_len
-                if l:
-                    self.__close_tcp_socket()
-            except OSError:
-                self.__close_tcp_socket()
-        if l:
-            raise OSError  # Stop Stream.
-
-
-class rpc_network_slave(rpc_slave):
-    def __valid_tcp_socket(self):  # private
-        if self.__tcp__socket is None:
-            try:
-                self.__tcp__socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                self.__tcp__socket.connect(self.__master_addr)
-            except OSError:
-                self.__tcp__socket = None
-        return self.__tcp__socket is not None
-
-    def __close_tcp_socket(self):  # private
-        self.__tcp__socket.close()
-        self.__tcp__socket = None
-
-    def __valid_udp_socket(self):  # private
-        if self.__udp__socket is None:
-            try:
-                self.__udp__socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                self.__udp__socket.bind(self.__myaddr)
-            except OSError:
-                self.__udp__socket = None
-        return self.__udp__socket is not None
-
-    def __close_udp_socket(self):  # private
-        self.__udp__socket.close()
-        self.__udp__socket = None
-
-    def __init__(self, network_if, port=0x1DBA):  # private
-        self._udp_limit = 1400
-        self._timeout_scale = 10
-        self.__network = network_if
-        self.__myip = self.__network.ifconfig()[0]
-        self.__myaddr = (self.__myip, port)
-        self.__master_addr = None
-        self.__tcp__socket = None
-        self.__udp__socket = None
-        print("IP Address:Port %s:%d\nRunning..." % self.__myaddr)
-        rpc_slave.__init__(self)
-
-    def _flush(self):  # protected
-        if self.__valid_udp_socket():
-            try:
-                self.__udp__socket.settimeout(0.001)
-                while True:
-                    data, addr = self.__udp__socket.recvfrom(1400)
-                    if not len(data):
-                        break
-            except OSError:
-                self.__close_udp_socket()
-        if self.__tcp__socket is not None:
-            try:
-                self.__tcp__socket.settimeout(0.001)
-                while True:
-                    data = self.__tcp__socket.recv(1400)
-                    if not len(data):
-                        break
-            except OSError:
-                self.__close_tcp_socket()
-
-    def get_bytes(self, buff, timeout_ms):  # protected
-        i = 0
-        l = len(buff)
-        if l <= self._udp_limit:
-            if self.__valid_udp_socket():
-                try:
-                    self.__udp__socket.settimeout(
-                        self._get_short_timeout * 0.001 * self._timeout_scale
-                    )
-                    while l:
-                        data, addr = self.__udp__socket.recvfrom(min(l, 1400))
-                        data_len = len(data)
-                        if not data_len:
-                            break
-                        buff[i : i + data_len] = data
-                        self.__master_addr = addr
-                        i += data_len
-                        l -= data_len
-                    # We don't need to close the socket on error since it's connectionless.
-                except OSError:
-                    self.__close_udp_socket()
-        elif self.__valid_tcp_socket():
-            try:
-                self.__tcp__socket.settimeout(timeout_ms * 0.001)
-                while l:
-                    data = self.__tcp__socket.recv(min(l, 1400))
-                    data_len = len(data)
-                    if not data_len:
-                        break
-                    buff[i : i + data_len] = data
-                    i += data_len
-                    l -= data_len
-                if l:
-                    self.__close_tcp_socket()
-            except OSError:
-                self.__close_tcp_socket()
-        return buff if not l else None
-
-    def put_bytes(self, data, timeout_ms):  # protected
-        i = 0
-        l = len(data)
-        if l <= self._udp_limit:
-            if self.__valid_udp_socket():
-                try:
-                    self.__udp__socket.settimeout(
-                        self._put_short_timeout * 0.001 * self._timeout_scale
-                    )
-                    while l:
-                        data_len = self.__udp__socket.sendto(
-                            data[i : i + min(l, 1400)], self.__master_addr
-                        )
-                        if not data_len:
-                            break
-                        i += data_len
-                        l -= data_len
-                    if l:
-                        self.__close_udp_socket()
-                except OSError:
-                    self.__close_udp_socket()
-        elif self.__valid_tcp_socket():
-            try:
-                self.__tcp__socket.settimeout(timeout_ms * 0.001)
-                while l:
-                    data_len = self.__tcp__socket.send(data[i : i + min(l, 1400)])
-                    if not data_len:
-                        break
-                    i += data_len
-                    l -= data_len
-                if l:
-                    self.__close_tcp_socket()
-            except OSError:
-                self.__close_tcp_socket()
-
-    def _stream_get_bytes(self, buff, timeout_ms):  # protected
-        i = 0
-        l = len(buff)
-        if self.__valid_tcp_socket():
-            try:
-                self.__tcp__socket.settimeout(timeout_ms * 0.001)
-                while l:
-                    data = self.__tcp__socket.recv(min(l, 1400))
-                    data_len = len(data)
-                    if not data_len:
-                        break
-                    buff[i : i + data_len] = data
-                    i += data_len
-                    l -= data_len
-                if l:
-                    self.__close_tcp_socket()
-            except OSError:
-                self.__close_tcp_socket()
-        return buff if not l else None
-
-    def _stream_put_bytes(self, data, timeout_ms):  # protected
-        i = 0
-        l = len(data)
-        if self.__valid_tcp_socket():
-            try:
-                self.__tcp__socket.settimeout(timeout_ms * 0.001)
-                while l:
-                    data_len = self.__tcp__socket.send(data[i : i + min(l, 1400)])
-                    if not data_len:
-                        break
-                    i += data_len
-                    l -= data_len
-                if l:
-                    self.__close_tcp_socket()
-            except OSError:
-                self.__close_tcp_socket()
-        if l:
-            raise OSError  # Stop Stream.

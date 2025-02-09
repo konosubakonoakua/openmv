@@ -1,80 +1,93 @@
 /*
- * This file is part of the OpenMV project.
+ * SPDX-License-Identifier: MIT
  *
- * Copyright (c) 2013-2021 Ibrahim Abdelkader <iabdalkader@openmv.io>
- * Copyright (c) 2013-2021 Kwabena W. Agyeman <kwagyeman@openmv.io>
+ * Copyright (C) 2013-2024 OpenMV, LLC.
  *
- * This work is licensed under the MIT license, see the file LICENSE for details.
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
  *
  * Statistics functions.
  */
 #include "imlib.h"
 
 #ifdef IMLIB_ENABLE_GET_SIMILARITY
-typedef struct imlib_similatiry_line_op_state {
+typedef struct imlib_similarity_line_op_state {
+    bool dssim;
     int *sumBucketsOfX, *sumBucketsOfY, *sum2BucketsOfX, *sum2BucketsOfY, *sum2Buckets;
     float similarity_sum, similarity_sum_2, similarity_min, similarity_max;
-    int lines_processed;
-} imlib_similatiry_line_op_state_t;
+    int lines_processed, lines;
+} imlib_similarity_line_op_state_t;
 
-void imlib_similarity_line_op(image_t *img, int line, void *other, void *data, bool vflipped)
-{
-    imlib_similatiry_line_op_state_t *state = (imlib_similatiry_line_op_state_t *) data; vflipped = vflipped;
+static void imlib_similarity_line_op(int x, int x_end, int y_row, imlib_draw_row_data_t *data) {
+    imlib_similarity_line_op_state_t *state = data->callback_arg;
     float c1 = 0, c2 = 0;
+    int x_start = x;
 
-    switch (img->pixfmt) {
+    switch (data->dst_img->pixfmt) {
         case PIXFORMAT_BINARY: {
-            uint32_t *row_ptr = IMAGE_COMPUTE_BINARY_PIXEL_ROW_PTR(img, line);
-            uint32_t *other_row_ptr = (uint32_t *) other;
-            for (int x = 0, xx = (img->w + 7) / 8; x < xx; x++) {
-                for (int i = 0, ii = IM_MIN((img->w - (x * 8)), 8); i < ii; i++) {
-                    int pixel = IMAGE_GET_BINARY_PIXEL_FAST(row_ptr, x + i);
-                    int other_pixel = IMAGE_GET_BINARY_PIXEL_FAST(other_row_ptr, x + i);
-                    state->sumBucketsOfX[x] += pixel;
-                    state->sumBucketsOfY[x] += other_pixel;
-                    state->sum2BucketsOfX[x] += pixel * pixel;
-                    state->sum2BucketsOfY[x] += other_pixel * other_pixel;
-                    state->sum2Buckets[x] += pixel * other_pixel;
-                }
+            uint32_t *row_ptr = IMAGE_COMPUTE_BINARY_PIXEL_ROW_PTR(data->dst_img, y_row);
+            uint32_t *other_row_ptr = (uint32_t *) data->dst_row_override;
+            for (; x < x_end; x++) {
+                int pixel = IMAGE_GET_BINARY_PIXEL_FAST(row_ptr, x);
+                int other_pixel = IMAGE_GET_BINARY_PIXEL_FAST(other_row_ptr, x);
+                int bucket = (x - x_start) / 8;
+                state->sumBucketsOfX[bucket] += pixel;
+                state->sumBucketsOfY[bucket] += other_pixel;
+                state->sum2BucketsOfX[bucket] += pixel * pixel;
+                state->sum2BucketsOfY[bucket] += other_pixel * other_pixel;
+                state->sum2Buckets[bucket] += pixel * other_pixel;
             }
-            c1 = COLOR_BINARY_MAX * 0.01f;
-            c2 = COLOR_BINARY_MAX * 0.03f;
+            c1 = (COLOR_BINARY_MAX * 0.01f) * (COLOR_BINARY_MAX * 0.01f);
+            c2 = (COLOR_BINARY_MAX * 0.03f) * (COLOR_BINARY_MAX * 0.03f);
             break;
         }
         case PIXFORMAT_GRAYSCALE: {
-            uint8_t *row_ptr = IMAGE_COMPUTE_GRAYSCALE_PIXEL_ROW_PTR(img, line);
-            uint8_t *other_row_ptr = (uint8_t *) other;
-            for (int x = 0, xx = (img->w + 7) / 8; x < xx; x++) {
-                for (int i = 0, ii = IM_MIN((img->w - (x * 8)), 8); i < ii; i++) {
-                    int pixel = IMAGE_GET_GRAYSCALE_PIXEL_FAST(row_ptr, x + i);
-                    int other_pixel = IMAGE_GET_GRAYSCALE_PIXEL_FAST(other_row_ptr, x + i);
-                    state->sumBucketsOfX[x] += pixel;
-                    state->sumBucketsOfY[x] += other_pixel;
-                    state->sum2BucketsOfX[x] += pixel * pixel;
-                    state->sum2BucketsOfY[x] += other_pixel * other_pixel;
-                    state->sum2Buckets[x] += pixel * other_pixel;
-                }
+            uint8_t *row_ptr = IMAGE_COMPUTE_GRAYSCALE_PIXEL_ROW_PTR(data->dst_img, y_row);
+            uint8_t *other_row_ptr = (uint8_t *) data->dst_row_override;
+            for (; x < x_end; x++) {
+                int pixel = IMAGE_GET_GRAYSCALE_PIXEL_FAST(row_ptr, x);
+                int other_pixel = IMAGE_GET_GRAYSCALE_PIXEL_FAST(other_row_ptr, x);
+                int bucket = (x - x_start) / 8;
+                state->sumBucketsOfX[bucket] += pixel;
+                state->sumBucketsOfY[bucket] += other_pixel;
+                state->sum2BucketsOfX[bucket] += pixel * pixel;
+                state->sum2BucketsOfY[bucket] += other_pixel * other_pixel;
+                state->sum2Buckets[bucket] += pixel * other_pixel;
             }
-            c1 = COLOR_GRAYSCALE_MAX * 0.01f;
-            c2 = COLOR_GRAYSCALE_MAX * 0.03f;
+            c1 = (COLOR_GRAYSCALE_MAX * 0.01f) * (COLOR_GRAYSCALE_MAX * 0.01f);
+            c2 = (COLOR_GRAYSCALE_MAX * 0.03f) * (COLOR_GRAYSCALE_MAX * 0.03f);
             break;
         }
         case PIXFORMAT_RGB565: {
-            uint16_t *row_ptr = IMAGE_COMPUTE_RGB565_PIXEL_ROW_PTR(img, line);
-            uint16_t *other_row_ptr = (uint16_t *) other;
-            for (int x = 0, xx = (img->w + 7) / 8; x < xx; x++) {
-                for (int i = 0, ii = IM_MIN((img->w - (x * 8)), 8); i < ii; i++) {
-                    int pixel = COLOR_RGB565_TO_L(IMAGE_GET_RGB565_PIXEL_FAST(row_ptr, x + i));
-                    int other_pixel = COLOR_RGB565_TO_L(IMAGE_GET_RGB565_PIXEL_FAST(other_row_ptr, x + i));
-                    state->sumBucketsOfX[x] += pixel;
-                    state->sumBucketsOfY[x] += other_pixel;
-                    state->sum2BucketsOfX[x] += pixel * pixel;
-                    state->sum2BucketsOfY[x] += other_pixel * other_pixel;
-                    state->sum2Buckets[x] += pixel * other_pixel;
-                }
+            uint16_t *row_ptr = IMAGE_COMPUTE_RGB565_PIXEL_ROW_PTR(data->dst_img, y_row);
+            uint16_t *other_row_ptr = (uint16_t *) data->dst_row_override;
+            for (; x < x_end; x++) {
+                int pixel = COLOR_RGB565_TO_Y(IMAGE_GET_RGB565_PIXEL_FAST(row_ptr, x));
+                int other_pixel = COLOR_RGB565_TO_Y(IMAGE_GET_RGB565_PIXEL_FAST(other_row_ptr, x));
+                int bucket = (x - x_start) / 8;
+                state->sumBucketsOfX[bucket] += pixel;
+                state->sumBucketsOfY[bucket] += other_pixel;
+                state->sum2BucketsOfX[bucket] += pixel * pixel;
+                state->sum2BucketsOfY[bucket] += other_pixel * other_pixel;
+                state->sum2Buckets[bucket] += pixel * other_pixel;
             }
-            c1 = COLOR_L_MAX * 0.01f;
-            c2 = COLOR_L_MAX * 0.03f;
+            c1 = (COLOR_Y_MAX * 0.01f) * (COLOR_Y_MAX * 0.01f);
+            c2 = (COLOR_Y_MAX * 0.03f) * (COLOR_Y_MAX * 0.03f);
             break;
         }
         default: {
@@ -83,71 +96,106 @@ void imlib_similarity_line_op(image_t *img, int line, void *other, void *data, b
     }
 
     // https://en.wikipedia.org/wiki/Structural_similarity
-    if (((state->lines_processed + 1) == img->h) || (!((state->lines_processed + 1) % 8))) {
-        for (int x = 0, xx = (img->w + 7) / 8; x < xx; x++) {
-            int w = IM_MIN((img->w - (x * 8)), 8);
-            int h = IM_MIN((img->h - ((state->lines_processed / 8) * 8)), 8);
-            int size = w * h;
+    if ((!((state->lines_processed + 1) % 8)) || ((state->lines_processed + 1) == state->lines)) {
+        for (x = x_start; x < x_end; x += 8) {
+            int bucket = (x - x_start) / 8;
+            int w = IM_MIN((x_end - x), 8);
+            int h = IM_MIN((state->lines - state->lines_processed), 8);
+            float size = w * h;
 
-            int mx = state->sumBucketsOfX[x] / size;
-            int my = state->sumBucketsOfY[x] / size;
-            int vx = state->sum2BucketsOfX[x] - ((mx * state->sumBucketsOfX[x]) + (mx * state->sumBucketsOfX[x])) + (size * mx * mx);
-            int vy = state->sum2BucketsOfY[x] - ((my * state->sumBucketsOfY[x]) + (my * state->sumBucketsOfY[x])) + (size * my * my);
-            int vxy = state->sum2Buckets[x] - ((mx * state->sumBucketsOfY[x]) + (my * state->sumBucketsOfX[x])) + (size * mx * my);
+            // Dividng the sum squared buckets by size causes a loss of accuracy which results in
+            // the single pass standard deviation formula giving the wrong answer. To bypass this
+            // vx, vy, vxy have been multiplied by size which will be divided back out in the final
+            // ssim calculation (given c1/c2 ~= 0).
 
-            float ssim = ( ((2*mx*my) + c1) * ((2*vxy) + c2) ) / ( ((mx*mx) + (my*my) + c1) * (vx + vy + c2) );
+            float mx = state->sumBucketsOfX[bucket] / size;
+            float my = state->sumBucketsOfY[bucket] / size;
+            float vx = state->sum2BucketsOfX[bucket] - (size * mx * mx);
+            float vy = state->sum2BucketsOfY[bucket] - (size * my * my);
+            float vxy = state->sum2Buckets[bucket] - (size * mx * my);
+
+            float ssim = (((2 * mx * my) + c1) * ((2 * vxy) + c2)) /
+                         (((mx * mx) + (my * my) + c1) * (vx + vy + c2));
+
+            if (state->dssim) {
+                ssim = (1.0f - ssim) / 2.0f;
+            }
 
             state->similarity_sum += ssim;
             state->similarity_sum_2 += ssim * ssim;
             state->similarity_min = IM_MIN(state->similarity_min, ssim);
             state->similarity_max = IM_MAX(state->similarity_max, ssim);
 
-            state->sumBucketsOfX[x] = 0;
-            state->sumBucketsOfY[x] = 0;
-            state->sum2BucketsOfX[x] = 0;
-            state->sum2BucketsOfY[x] = 0;
-            state->sum2Buckets[x] = 0;
+            state->sumBucketsOfX[bucket] = 0;
+            state->sumBucketsOfY[bucket] = 0;
+            state->sum2BucketsOfX[bucket] = 0;
+            state->sum2BucketsOfY[bucket] = 0;
+            state->sum2Buckets[bucket] = 0;
         }
     }
 
     state->lines_processed += 1;
 }
 
-void imlib_get_similarity(image_t *img, const char *path, image_t *other, int scalar, float *avg, float *std, float *min, float *max)
-{
-    int h_blocks = (img->w + 7) / 8;
-    int v_blocks = (img->h + 7) / 8;
+void imlib_get_similarity(image_t *img,
+                          image_t *other,
+                          int x_start,
+                          int y_start,
+                          float x_scale,
+                          float y_scale,
+                          rectangle_t *roi,
+                          int rgb_channel,
+                          int alpha,
+                          const uint16_t *color_palette,
+                          const uint8_t *alpha_palette,
+                          image_hint_t hint,
+                          bool dssim,
+                          float *avg,
+                          float *std,
+                          float *min,
+                          float *max) {
+    point_t p0, p1;
+    imlib_draw_image_get_bounds(img, other, x_start, y_start, x_scale, y_scale, roi,
+                                alpha, alpha_palette, hint, &p0, &p1);
+    int h_blocks = ((p1.x - p0.x) + 7) / 8;
+    int v_blocks = ((p1.y - p0.y) + 7) / 8;
     int blocks = h_blocks * v_blocks;
 
+    if (!blocks) {
+        return;
+    }
+
     int int_h_blocks = h_blocks * sizeof(int);
-    imlib_similatiry_line_op_state_t state;
-    state.sumBucketsOfX = fb_alloc0(int_h_blocks, FB_ALLOC_NO_HINT);
-    state.sumBucketsOfY = fb_alloc0(int_h_blocks, FB_ALLOC_NO_HINT);
-    state.sum2BucketsOfX = fb_alloc0(int_h_blocks, FB_ALLOC_NO_HINT);
-    state.sum2BucketsOfY = fb_alloc0(int_h_blocks, FB_ALLOC_NO_HINT);
-    state.sum2Buckets = fb_alloc0(int_h_blocks, FB_ALLOC_NO_HINT);
+    imlib_similarity_line_op_state_t state;
+    state.dssim = dssim;
+    state.sumBucketsOfX = fb_alloc0(int_h_blocks * 5, FB_ALLOC_NO_HINT);
+    state.sumBucketsOfY = state.sumBucketsOfX + int_h_blocks;
+    state.sum2BucketsOfX = state.sumBucketsOfY + int_h_blocks;
+    state.sum2BucketsOfY = state.sum2BucketsOfX + int_h_blocks;
+    state.sum2Buckets = state.sum2BucketsOfY + int_h_blocks;
     state.similarity_sum = 0.0f;
     state.similarity_sum_2 = 0.0f;
     state.similarity_min = FLT_MAX;
     state.similarity_max = -FLT_MAX;
     state.lines_processed = 0;
+    state.lines = p1.y - p0.y;
 
-    imlib_image_operation(img, path, other, scalar, imlib_similarity_line_op, &state);
+    void *dst_row_override = fb_alloc0(image_line_size(img), FB_ALLOC_CACHE_ALIGN);
+    imlib_draw_image(img, other, x_start, y_start, x_scale, y_scale, roi,
+                     rgb_channel, alpha, color_palette, alpha_palette,
+                     hint, imlib_similarity_line_op, &state, dst_row_override);
+
     *avg = state.similarity_sum / blocks;
     *std = fast_sqrtf((state.similarity_sum_2 / blocks) - ((*avg) * (*avg)));
     *min = state.similarity_min;
     *max = state.similarity_max;
 
-    fb_free();
-    fb_free();
-    fb_free();
-    fb_free();
-    fb_free();
+    fb_free(); // dst_row_override
+    fb_free(); // sumBucketsOfX
 }
-#endif //IMLIB_ENABLE_GET_SIMILARITY
+#endif // IMLIB_ENABLE_GET_SIMILARITY
 
-void imlib_get_histogram(histogram_t *out, image_t *ptr, rectangle_t *roi, list_t *thresholds, bool invert, image_t *other)
-{
+void imlib_get_histogram(histogram_t *out, image_t *ptr, rectangle_t *roi, list_t *thresholds, bool invert, image_t *other) {
     switch (ptr->pixfmt) {
         case PIXFORMAT_BINARY: {
             memset(out->LBins, 0, out->LBinCount * sizeof(uint32_t));
@@ -162,15 +210,16 @@ void imlib_get_histogram(histogram_t *out, image_t *ptr, rectangle_t *roi, list_
                         uint32_t *row_ptr = IMAGE_COMPUTE_BINARY_PIXEL_ROW_PTR(ptr, y);
                         for (int x = roi->x, xx = roi->x + roi->w; x < xx; x++) {
                             int pixel = IMAGE_GET_BINARY_PIXEL_FAST(row_ptr, x);
-                            ((uint32_t *) out->LBins)[fast_roundf((pixel - COLOR_BINARY_MIN) * mult)]++; // needs to be roundf
+                            ((uint32_t *) out->LBins)[fast_roundf((pixel - COLOR_BINARY_MIN) * mult)]++;
                         }
                     }
                 } else {
                     for (int y = roi->y, yy = roi->y + roi->h; y < yy; y++) {
-                        uint32_t *row_ptr = IMAGE_COMPUTE_BINARY_PIXEL_ROW_PTR(ptr, y), *other_row_ptr = IMAGE_COMPUTE_BINARY_PIXEL_ROW_PTR(other, y);
+                        uint32_t *row_ptr = IMAGE_COMPUTE_BINARY_PIXEL_ROW_PTR(ptr, y),
+                                 *other_row_ptr = IMAGE_COMPUTE_BINARY_PIXEL_ROW_PTR(other, y);
                         for (int x = roi->x, xx = roi->x + roi->w; x < xx; x++) {
                             int pixel = IMAGE_GET_BINARY_PIXEL_FAST(row_ptr, x) ^ IMAGE_GET_BINARY_PIXEL_FAST(other_row_ptr, x);
-                            ((uint32_t *) out->LBins)[fast_roundf((pixel - COLOR_BINARY_MIN) * mult)]++; // needs to be roundf
+                            ((uint32_t *) out->LBins)[fast_roundf((pixel - COLOR_BINARY_MIN) * mult)]++;
                         }
                     }
                 }
@@ -178,32 +227,31 @@ void imlib_get_histogram(histogram_t *out, image_t *ptr, rectangle_t *roi, list_
                 // Reset pixel count.
                 pixel_count = 0;
                 if (!other) {
-                    for (list_lnk_t *it = iterator_start_from_head(thresholds); it; it = iterator_next(it)) {
-                        color_thresholds_list_lnk_data_t lnk_data;
-                        iterator_get(thresholds, it, &lnk_data);
-
+                    list_for_each(it, thresholds) {
+                        color_thresholds_list_lnk_data_t *lnk_data = list_get_data(it);
                         for (int y = roi->y, yy = roi->y + roi->h; y < yy; y++) {
                             uint32_t *row_ptr = IMAGE_COMPUTE_BINARY_PIXEL_ROW_PTR(ptr, y);
                             for (int x = roi->x, xx = roi->x + roi->w; x < xx; x++) {
                                 int pixel = IMAGE_GET_BINARY_PIXEL_FAST(row_ptr, x);
-                                if (COLOR_THRESHOLD_BINARY(pixel, &lnk_data, invert)) {
-                                    ((uint32_t *) out->LBins)[fast_roundf((pixel - COLOR_BINARY_MIN) * mult)]++; // needs to be roundf
+                                if (COLOR_THRESHOLD_BINARY(pixel, lnk_data, invert)) {
+                                    ((uint32_t *) out->LBins)[fast_roundf((pixel - COLOR_BINARY_MIN) * mult)]++;
                                     pixel_count++;
                                 }
                             }
                         }
                     }
                 } else {
-                    for (list_lnk_t *it = iterator_start_from_head(thresholds); it; it = iterator_next(it)) {
-                        color_thresholds_list_lnk_data_t lnk_data;
-                        iterator_get(thresholds, it, &lnk_data);
+                    list_for_each(it, thresholds) {
+                        color_thresholds_list_lnk_data_t *lnk_data = list_get_data(it);
 
                         for (int y = roi->y, yy = roi->y + roi->h; y < yy; y++) {
-                            uint32_t *row_ptr = IMAGE_COMPUTE_BINARY_PIXEL_ROW_PTR(ptr, y), *other_row_ptr = IMAGE_COMPUTE_BINARY_PIXEL_ROW_PTR(other, y);
+                            uint32_t *row_ptr = IMAGE_COMPUTE_BINARY_PIXEL_ROW_PTR(ptr, y),
+                                     *other_row_ptr = IMAGE_COMPUTE_BINARY_PIXEL_ROW_PTR(other, y);
                             for (int x = roi->x, xx = roi->x + roi->w; x < xx; x++) {
-                                int pixel = IMAGE_GET_BINARY_PIXEL_FAST(row_ptr, x) ^ IMAGE_GET_BINARY_PIXEL_FAST(other_row_ptr, x);
-                                if (COLOR_THRESHOLD_BINARY(pixel, &lnk_data, invert)) {
-                                    ((uint32_t *) out->LBins)[fast_roundf((pixel - COLOR_BINARY_MIN) * mult)]++; // needs to be roundf
+                                int pixel = IMAGE_GET_BINARY_PIXEL_FAST(row_ptr, x) ^ IMAGE_GET_BINARY_PIXEL_FAST(other_row_ptr,
+                                                                                                                  x);
+                                if (COLOR_THRESHOLD_BINARY(pixel, lnk_data, invert)) {
+                                    ((uint32_t *) out->LBins)[fast_roundf((pixel - COLOR_BINARY_MIN) * mult)]++;
                                     pixel_count++;
                                 }
                             }
@@ -233,15 +281,18 @@ void imlib_get_histogram(histogram_t *out, image_t *ptr, rectangle_t *roi, list_
                         uint8_t *row_ptr = IMAGE_COMPUTE_GRAYSCALE_PIXEL_ROW_PTR(ptr, y);
                         for (int x = roi->x, xx = roi->x + roi->w; x < xx; x++) {
                             int pixel = IMAGE_GET_GRAYSCALE_PIXEL_FAST(row_ptr, x);
-                            ((uint32_t *) out->LBins)[fast_roundf((pixel - COLOR_GRAYSCALE_MIN) * mult)]++; // needs to be roundf
+                            ((uint32_t *) out->LBins)[fast_roundf((pixel - COLOR_GRAYSCALE_MIN) * mult)]++;
                         }
                     }
                 } else {
                     for (int y = roi->y, yy = roi->y + roi->h; y < yy; y++) {
-                        uint8_t *row_ptr = IMAGE_COMPUTE_GRAYSCALE_PIXEL_ROW_PTR(ptr, y), *other_row_ptr = IMAGE_COMPUTE_GRAYSCALE_PIXEL_ROW_PTR(other, y);
+                        uint8_t *row_ptr = IMAGE_COMPUTE_GRAYSCALE_PIXEL_ROW_PTR(ptr, y),
+                                *other_row_ptr = IMAGE_COMPUTE_GRAYSCALE_PIXEL_ROW_PTR(other, y);
                         for (int x = roi->x, xx = roi->x + roi->w; x < xx; x++) {
-                            int pixel = abs(IMAGE_GET_GRAYSCALE_PIXEL_FAST(row_ptr, x) - IMAGE_GET_GRAYSCALE_PIXEL_FAST(other_row_ptr, x));
-                            ((uint32_t *) out->LBins)[fast_roundf((pixel - COLOR_GRAYSCALE_MIN) * mult)]++; // needs to be roundf
+                            int pixel =
+                                abs(IMAGE_GET_GRAYSCALE_PIXEL_FAST(row_ptr, x) - IMAGE_GET_GRAYSCALE_PIXEL_FAST(other_row_ptr,
+                                                                                                                x));
+                            ((uint32_t *) out->LBins)[fast_roundf((pixel - COLOR_GRAYSCALE_MIN) * mult)]++;
                         }
                     }
                 }
@@ -249,32 +300,34 @@ void imlib_get_histogram(histogram_t *out, image_t *ptr, rectangle_t *roi, list_
                 // Reset pixel count.
                 pixel_count = 0;
                 if (!other) {
-                    for (list_lnk_t *it = iterator_start_from_head(thresholds); it; it = iterator_next(it)) {
-                        color_thresholds_list_lnk_data_t lnk_data;
-                        iterator_get(thresholds, it, &lnk_data);
+                    list_for_each(it, thresholds) {
+                        color_thresholds_list_lnk_data_t *lnk_data = list_get_data(it);
 
                         for (int y = roi->y, yy = roi->y + roi->h; y < yy; y++) {
                             uint8_t *row_ptr = IMAGE_COMPUTE_GRAYSCALE_PIXEL_ROW_PTR(ptr, y);
                             for (int x = roi->x, xx = roi->x + roi->w; x < xx; x++) {
                                 int pixel = IMAGE_GET_GRAYSCALE_PIXEL_FAST(row_ptr, x);
-                                if (COLOR_THRESHOLD_GRAYSCALE(pixel, &lnk_data, invert)) {
-                                    ((uint32_t *) out->LBins)[fast_roundf((pixel - COLOR_GRAYSCALE_MIN) * mult)]++; // needs to be roundf
+                                if (COLOR_THRESHOLD_GRAYSCALE(pixel, lnk_data, invert)) {
+                                    ((uint32_t *) out->LBins)[fast_roundf((pixel - COLOR_GRAYSCALE_MIN) * mult)]++;
                                     pixel_count++;
                                 }
                             }
                         }
                     }
                 } else {
-                    for (list_lnk_t *it = iterator_start_from_head(thresholds); it; it = iterator_next(it)) {
-                        color_thresholds_list_lnk_data_t lnk_data;
-                        iterator_get(thresholds, it, &lnk_data);
+                    list_for_each(it, thresholds) {
+                        color_thresholds_list_lnk_data_t *lnk_data = list_get_data(it);
 
                         for (int y = roi->y, yy = roi->y + roi->h; y < yy; y++) {
-                            uint8_t *row_ptr = IMAGE_COMPUTE_GRAYSCALE_PIXEL_ROW_PTR(ptr, y), *other_row_ptr = IMAGE_COMPUTE_GRAYSCALE_PIXEL_ROW_PTR(other, y);
+                            uint8_t *row_ptr = IMAGE_COMPUTE_GRAYSCALE_PIXEL_ROW_PTR(ptr, y),
+                                    *other_row_ptr = IMAGE_COMPUTE_GRAYSCALE_PIXEL_ROW_PTR(other, y);
                             for (int x = roi->x, xx = roi->x + roi->w; x < xx; x++) {
-                                int pixel = abs(IMAGE_GET_GRAYSCALE_PIXEL_FAST(row_ptr, x) - IMAGE_GET_GRAYSCALE_PIXEL_FAST(other_row_ptr, x));
-                                if (COLOR_THRESHOLD_GRAYSCALE(pixel, &lnk_data, invert)) {
-                                    ((uint32_t *) out->LBins)[fast_roundf((pixel - COLOR_GRAYSCALE_MIN) * mult)]++; // needs to be roundf
+                                int pixel =
+                                    abs(IMAGE_GET_GRAYSCALE_PIXEL_FAST(row_ptr,
+                                                                       x) - IMAGE_GET_GRAYSCALE_PIXEL_FAST(other_row_ptr,
+                                                                                                           x));
+                                if (COLOR_THRESHOLD_GRAYSCALE(pixel, lnk_data, invert)) {
+                                    ((uint32_t *) out->LBins)[fast_roundf((pixel - COLOR_GRAYSCALE_MIN) * mult)]++;
                                     pixel_count++;
                                 }
                             }
@@ -308,23 +361,25 @@ void imlib_get_histogram(histogram_t *out, image_t *ptr, rectangle_t *roi, list_
                         uint16_t *row_ptr = IMAGE_COMPUTE_RGB565_PIXEL_ROW_PTR(ptr, y);
                         for (int x = roi->x, xx = roi->x + roi->w; x < xx; x++) {
                             int pixel = IMAGE_GET_RGB565_PIXEL_FAST(row_ptr, x);
-                            ((uint32_t *) out->LBins)[fast_roundf((COLOR_RGB565_TO_L(pixel) - COLOR_L_MIN) * l_mult)]++; // needs to be roundf
-                            ((uint32_t *) out->ABins)[fast_roundf((COLOR_RGB565_TO_A(pixel) - COLOR_A_MIN) * a_mult)]++; // needs to be roundf
-                            ((uint32_t *) out->BBins)[fast_roundf((COLOR_RGB565_TO_B(pixel) - COLOR_B_MIN) * b_mult)]++; // needs to be roundf
+                            ((uint32_t *) out->LBins)[fast_roundf((COLOR_RGB565_TO_L(pixel) - COLOR_L_MIN) * l_mult)]++;
+                            ((uint32_t *) out->ABins)[fast_roundf((COLOR_RGB565_TO_A(pixel) - COLOR_A_MIN) * a_mult)]++;
+                            ((uint32_t *) out->BBins)[fast_roundf((COLOR_RGB565_TO_B(pixel) - COLOR_B_MIN) * b_mult)]++;
                         }
                     }
                 } else {
                     for (int y = roi->y, yy = roi->y + roi->h; y < yy; y++) {
-                        uint16_t *row_ptr = IMAGE_COMPUTE_RGB565_PIXEL_ROW_PTR(ptr, y), *other_row_ptr = IMAGE_COMPUTE_RGB565_PIXEL_ROW_PTR(other, y);
+                        uint16_t *row_ptr = IMAGE_COMPUTE_RGB565_PIXEL_ROW_PTR(ptr, y),
+                                 *other_row_ptr = IMAGE_COMPUTE_RGB565_PIXEL_ROW_PTR(other, y);
                         for (int x = roi->x, xx = roi->x + roi->w; x < xx; x++) {
-                            int pixel = IMAGE_GET_RGB565_PIXEL_FAST(row_ptr, x), other_pixel = IMAGE_GET_RGB565_PIXEL_FAST(other_row_ptr, x);
+                            int pixel = IMAGE_GET_RGB565_PIXEL_FAST(row_ptr, x);
+                            int other_pixel = IMAGE_GET_RGB565_PIXEL_FAST(other_row_ptr, x);
                             int r = abs(COLOR_RGB565_TO_R5(pixel) - COLOR_RGB565_TO_R5(other_pixel));
                             int g = abs(COLOR_RGB565_TO_G6(pixel) - COLOR_RGB565_TO_G6(other_pixel));
                             int b = abs(COLOR_RGB565_TO_B5(pixel) - COLOR_RGB565_TO_B5(other_pixel));
                             pixel = COLOR_R5_G6_B5_TO_RGB565(r, g, b);
-                            ((uint32_t *) out->LBins)[fast_roundf((COLOR_RGB565_TO_L(pixel) - COLOR_L_MIN) * l_mult)]++; // needs to be roundf
-                            ((uint32_t *) out->ABins)[fast_roundf((COLOR_RGB565_TO_A(pixel) - COLOR_A_MIN) * a_mult)]++; // needs to be roundf
-                            ((uint32_t *) out->BBins)[fast_roundf((COLOR_RGB565_TO_B(pixel) - COLOR_B_MIN) * b_mult)]++; // needs to be roundf
+                            ((uint32_t *) out->LBins)[fast_roundf((COLOR_RGB565_TO_L(pixel) - COLOR_L_MIN) * l_mult)]++;
+                            ((uint32_t *) out->ABins)[fast_roundf((COLOR_RGB565_TO_A(pixel) - COLOR_A_MIN) * a_mult)]++;
+                            ((uint32_t *) out->BBins)[fast_roundf((COLOR_RGB565_TO_B(pixel) - COLOR_B_MIN) * b_mult)]++;
                         }
                     }
                 }
@@ -332,40 +387,40 @@ void imlib_get_histogram(histogram_t *out, image_t *ptr, rectangle_t *roi, list_
                 // Reset pixel count.
                 pixel_count = 0;
                 if (!other) {
-                    for (list_lnk_t *it = iterator_start_from_head(thresholds); it; it = iterator_next(it)) {
-                        color_thresholds_list_lnk_data_t lnk_data;
-                        iterator_get(thresholds, it, &lnk_data);
+                    list_for_each(it, thresholds) {
+                        color_thresholds_list_lnk_data_t *lnk_data = list_get_data(it);
 
                         for (int y = roi->y, yy = roi->y + roi->h; y < yy; y++) {
                             uint16_t *row_ptr = IMAGE_COMPUTE_RGB565_PIXEL_ROW_PTR(ptr, y);
                             for (int x = roi->x, xx = roi->x + roi->w; x < xx; x++) {
                                 int pixel = IMAGE_GET_RGB565_PIXEL_FAST(row_ptr, x);
-                                if (COLOR_THRESHOLD_RGB565(pixel, &lnk_data, invert)) {
-                                    ((uint32_t *) out->LBins)[fast_roundf((COLOR_RGB565_TO_L(pixel) - COLOR_L_MIN) * l_mult)]++; // needs to be roundf
-                                    ((uint32_t *) out->ABins)[fast_roundf((COLOR_RGB565_TO_A(pixel) - COLOR_A_MIN) * a_mult)]++; // needs to be roundf
-                                    ((uint32_t *) out->BBins)[fast_roundf((COLOR_RGB565_TO_B(pixel) - COLOR_B_MIN) * b_mult)]++; // needs to be roundf
+                                if (COLOR_THRESHOLD_RGB565(pixel, lnk_data, invert)) {
+                                    ((uint32_t *) out->LBins)[fast_roundf((COLOR_RGB565_TO_L(pixel) - COLOR_L_MIN) * l_mult)]++;
+                                    ((uint32_t *) out->ABins)[fast_roundf((COLOR_RGB565_TO_A(pixel) - COLOR_A_MIN) * a_mult)]++;
+                                    ((uint32_t *) out->BBins)[fast_roundf((COLOR_RGB565_TO_B(pixel) - COLOR_B_MIN) * b_mult)]++;
                                     pixel_count++;
                                 }
                             }
                         }
                     }
                 } else {
-                    for (list_lnk_t *it = iterator_start_from_head(thresholds); it; it = iterator_next(it)) {
-                        color_thresholds_list_lnk_data_t lnk_data;
-                        iterator_get(thresholds, it, &lnk_data);
+                    list_for_each(it, thresholds) {
+                        color_thresholds_list_lnk_data_t *lnk_data = list_get_data(it);
 
                         for (int y = roi->y, yy = roi->y + roi->h; y < yy; y++) {
-                            uint16_t *row_ptr = IMAGE_COMPUTE_RGB565_PIXEL_ROW_PTR(ptr, y), *other_row_ptr = IMAGE_COMPUTE_RGB565_PIXEL_ROW_PTR(other, y);
+                            uint16_t *row_ptr = IMAGE_COMPUTE_RGB565_PIXEL_ROW_PTR(ptr, y),
+                                     *other_row_ptr = IMAGE_COMPUTE_RGB565_PIXEL_ROW_PTR(other, y);
                             for (int x = roi->x, xx = roi->x + roi->w; x < xx; x++) {
-                                int pixel = IMAGE_GET_RGB565_PIXEL_FAST(row_ptr, x), other_pixel = IMAGE_GET_RGB565_PIXEL_FAST(other_row_ptr, x);
+                                int pixel = IMAGE_GET_RGB565_PIXEL_FAST(row_ptr, x);
+                                int other_pixel = IMAGE_GET_RGB565_PIXEL_FAST(other_row_ptr, x);
                                 int r = abs(COLOR_RGB565_TO_R5(pixel) - COLOR_RGB565_TO_R5(other_pixel));
                                 int g = abs(COLOR_RGB565_TO_G6(pixel) - COLOR_RGB565_TO_G6(other_pixel));
                                 int b = abs(COLOR_RGB565_TO_B5(pixel) - COLOR_RGB565_TO_B5(other_pixel));
                                 pixel = COLOR_R5_G6_B5_TO_RGB565(r, g, b);
-                                if (COLOR_THRESHOLD_RGB565(pixel, &lnk_data, invert)) {
-                                    ((uint32_t *) out->LBins)[fast_roundf((COLOR_RGB565_TO_L(pixel) - COLOR_L_MIN) * l_mult)]++; // needs to be roundf
-                                    ((uint32_t *) out->ABins)[fast_roundf((COLOR_RGB565_TO_A(pixel) - COLOR_A_MIN) * a_mult)]++; // needs to be roundf
-                                    ((uint32_t *) out->BBins)[fast_roundf((COLOR_RGB565_TO_B(pixel) - COLOR_B_MIN) * b_mult)]++; // needs to be roundf
+                                if (COLOR_THRESHOLD_RGB565(pixel, lnk_data, invert)) {
+                                    ((uint32_t *) out->LBins)[fast_roundf((COLOR_RGB565_TO_L(pixel) - COLOR_L_MIN) * l_mult)]++;
+                                    ((uint32_t *) out->ABins)[fast_roundf((COLOR_RGB565_TO_A(pixel) - COLOR_A_MIN) * a_mult)]++;
+                                    ((uint32_t *) out->BBins)[fast_roundf((COLOR_RGB565_TO_B(pixel) - COLOR_B_MIN) * b_mult)]++;
                                     pixel_count++;
                                 }
                             }
@@ -396,8 +451,7 @@ void imlib_get_histogram(histogram_t *out, image_t *ptr, rectangle_t *roi, list_
     }
 }
 
-void imlib_get_percentile(percentile_t *out, pixformat_t pixfmt, histogram_t *ptr, float percentile)
-{
+void imlib_get_percentile(percentile_t *out, pixformat_t pixfmt, histogram_t *ptr, float percentile) {
     memset(out, 0, sizeof(percentile_t));
     switch (pixfmt) {
         case PIXFORMAT_BINARY: {
@@ -476,8 +530,7 @@ void imlib_get_percentile(percentile_t *out, pixformat_t pixfmt, histogram_t *pt
     }
 }
 
-static int ostu(int bincount, float *bins)
-{
+static int ostu(int bincount, float *bins) {
     float cdf[bincount]; memset(cdf, 0, bincount * sizeof(float));
     float weighted_cdf[bincount]; memset(weighted_cdf, 0, bincount * sizeof(float));
 
@@ -510,8 +563,7 @@ static int ostu(int bincount, float *bins)
     return threshold;
 }
 
-void imlib_get_threshold(threshold_t *out, pixformat_t pixfmt, histogram_t *ptr)
-{
+void imlib_get_threshold(threshold_t *out, pixformat_t pixfmt, histogram_t *ptr) {
     memset(out, 0, sizeof(threshold_t));
     switch (pixfmt) {
         case PIXFORMAT_BINARY: {
@@ -519,13 +571,16 @@ void imlib_get_threshold(threshold_t *out, pixformat_t pixfmt, histogram_t *ptr)
             break;
         }
         case PIXFORMAT_GRAYSCALE: {
-            out->LValue = (ostu(ptr->LBinCount, ptr->LBins) * (COLOR_GRAYSCALE_MAX - COLOR_GRAYSCALE_MIN)) / (ptr->LBinCount - 1);
+            out->LValue =
+                (ostu(ptr->LBinCount, ptr->LBins) * (COLOR_GRAYSCALE_MAX - COLOR_GRAYSCALE_MIN)) / (ptr->LBinCount - 1);
             break;
         }
         case PIXFORMAT_RGB565: {
             out->LValue = (ostu(ptr->LBinCount, ptr->LBins) * (COLOR_L_MAX - COLOR_L_MIN)) / (ptr->LBinCount - 1);
-            out->AValue = (ostu(ptr->ABinCount, ptr->ABins) * (COLOR_A_MAX - COLOR_A_MIN)) / (ptr->ABinCount - 1);
-            out->BValue = (ostu(ptr->BBinCount, ptr->BBins) * (COLOR_B_MAX - COLOR_B_MIN)) / (ptr->BBinCount - 1);
+            out->AValue = ((ostu(ptr->ABinCount, ptr->ABins) * (COLOR_A_MAX - COLOR_A_MIN)) / (ptr->ABinCount - 1)) +
+                          COLOR_A_MIN;
+            out->BValue = ((ostu(ptr->BBinCount, ptr->BBins) * (COLOR_B_MAX - COLOR_B_MIN)) / (ptr->BBinCount - 1)) +
+                          COLOR_B_MIN;
             break;
         }
         default: {
@@ -534,8 +589,7 @@ void imlib_get_threshold(threshold_t *out, pixformat_t pixfmt, histogram_t *ptr)
     }
 }
 
-void imlib_get_statistics(statistics_t *out, pixformat_t pixfmt, histogram_t *ptr)
-{
+void imlib_get_statistics(statistics_t *out, pixformat_t pixfmt, histogram_t *ptr) {
     memset(out, 0, sizeof(statistics_t));
     switch (pixfmt) {
         case PIXFORMAT_BINARY: {
@@ -789,39 +843,49 @@ void imlib_get_statistics(statistics_t *out, pixformat_t pixfmt, histogram_t *pt
     }
 }
 
-static int get_median(int *array, int array_sum, int array_len)
-{
+static int get_median(int *array, int array_sum, int array_len) {
     const int median_threshold = (array_sum + 1) / 2;
     int median_count = 0;
 
     for (int i = 0; i < array_len; i++) {
-        if ((median_count < median_threshold) && (median_threshold <= (median_count + array[i]))) return i;
+        if ((median_count < median_threshold) && (median_threshold <= (median_count + array[i]))) {
+            return i;
+        }
         median_count += array[i];
     }
 
     return array_len - 1;
 }
 
-static int get_median_l(long long *array, long long array_sum, int array_len)
-{
+static int get_median_l(long long *array, long long array_sum, int array_len) {
     const long long median_threshold = (array_sum + 1) / 2;
     long long median_count = 0;
 
     for (int i = 0; i < array_len; i++) {
-        if ((median_count < median_threshold) && (median_threshold <= (median_count + array[i]))) return i;
+        if ((median_count < median_threshold) && (median_threshold <= (median_count + array[i]))) {
+            return i;
+        }
         median_count += array[i];
     }
 
     return array_len - 1;
 }
 
-bool imlib_get_regression(find_lines_list_lnk_data_t *out, image_t *ptr, rectangle_t *roi, unsigned int x_stride, unsigned int y_stride,
-                          list_t *thresholds, bool invert, unsigned int area_threshold, unsigned int pixels_threshold, bool robust)
-{
+bool imlib_get_regression(find_lines_list_lnk_data_t *out,
+                          image_t *ptr,
+                          rectangle_t *roi,
+                          unsigned int x_stride,
+                          unsigned int y_stride,
+                          list_t *thresholds,
+                          bool invert,
+                          unsigned int area_threshold,
+                          unsigned int pixels_threshold,
+                          bool robust) {
     bool result = false;
     memset(out, 0, sizeof(find_lines_list_lnk_data_t));
 
-    if (!robust) { // Least Squares
+    if (!robust) {
+        // Least Squares
         int blob_x1 = roi->x + roi->w - 1;
         int blob_y1 = roi->y + roi->h - 1;
         int blob_x2 = roi->x;
@@ -833,16 +897,15 @@ bool imlib_get_regression(find_lines_list_lnk_data_t *out, image_t *ptr, rectang
         long long blob_b = 0;
         long long blob_c = 0;
 
-        for (list_lnk_t *it = iterator_start_from_head(thresholds); it; it = iterator_next(it)) {
-            color_thresholds_list_lnk_data_t lnk_data;
-            iterator_get(thresholds, it, &lnk_data);
+        list_for_each(it, thresholds) {
+            color_thresholds_list_lnk_data_t *lnk_data = list_get_data(it);
 
             switch (ptr->pixfmt) {
                 case PIXFORMAT_BINARY: {
                     for (int y = roi->y, yy = roi->y + roi->h; y < yy; y += y_stride) {
                         uint32_t *row_ptr = IMAGE_COMPUTE_BINARY_PIXEL_ROW_PTR(ptr, y);
                         for (int x = roi->x + (y % x_stride), xx = roi->x + roi->w; x < xx; x += x_stride) {
-                            if (COLOR_THRESHOLD_BINARY(IMAGE_GET_BINARY_PIXEL_FAST(row_ptr, x), &lnk_data, invert)) {
+                            if (COLOR_THRESHOLD_BINARY(IMAGE_GET_BINARY_PIXEL_FAST(row_ptr, x), lnk_data, invert)) {
                                 blob_x1 = IM_MIN(blob_x1, x);
                                 blob_y1 = IM_MIN(blob_y1, y);
                                 blob_x2 = IM_MAX(blob_x2, x);
@@ -850,9 +913,9 @@ bool imlib_get_regression(find_lines_list_lnk_data_t *out, image_t *ptr, rectang
                                 blob_pixels += 1;
                                 blob_cx += x;
                                 blob_cy += y;
-                                blob_a += x*x;
-                                blob_b += x*y;
-                                blob_c += y*y;
+                                blob_a += x * x;
+                                blob_b += x * y;
+                                blob_c += y * y;
                             }
                         }
                     }
@@ -862,7 +925,7 @@ bool imlib_get_regression(find_lines_list_lnk_data_t *out, image_t *ptr, rectang
                     for (int y = roi->y, yy = roi->y + roi->h; y < yy; y += y_stride) {
                         uint8_t *row_ptr = IMAGE_COMPUTE_GRAYSCALE_PIXEL_ROW_PTR(ptr, y);
                         for (int x = roi->x + (y % x_stride), xx = roi->x + roi->w; x < xx; x += x_stride) {
-                            if (COLOR_THRESHOLD_GRAYSCALE(IMAGE_GET_GRAYSCALE_PIXEL_FAST(row_ptr, x), &lnk_data, invert)) {
+                            if (COLOR_THRESHOLD_GRAYSCALE(IMAGE_GET_GRAYSCALE_PIXEL_FAST(row_ptr, x), lnk_data, invert)) {
                                 blob_x1 = IM_MIN(blob_x1, x);
                                 blob_y1 = IM_MIN(blob_y1, y);
                                 blob_x2 = IM_MAX(blob_x2, x);
@@ -870,9 +933,9 @@ bool imlib_get_regression(find_lines_list_lnk_data_t *out, image_t *ptr, rectang
                                 blob_pixels += 1;
                                 blob_cx += x;
                                 blob_cy += y;
-                                blob_a += x*x;
-                                blob_b += x*y;
-                                blob_c += y*y;
+                                blob_a += x * x;
+                                blob_b += x * y;
+                                blob_c += y * y;
                             }
                         }
                     }
@@ -882,7 +945,7 @@ bool imlib_get_regression(find_lines_list_lnk_data_t *out, image_t *ptr, rectang
                     for (int y = roi->y, yy = roi->y + roi->h; y < yy; y += y_stride) {
                         uint16_t *row_ptr = IMAGE_COMPUTE_RGB565_PIXEL_ROW_PTR(ptr, y);
                         for (int x = roi->x + (y % x_stride), xx = roi->x + roi->w; x < xx; x += x_stride) {
-                            if (COLOR_THRESHOLD_RGB565(IMAGE_GET_RGB565_PIXEL_FAST(row_ptr, x), &lnk_data, invert)) {
+                            if (COLOR_THRESHOLD_RGB565(IMAGE_GET_RGB565_PIXEL_FAST(row_ptr, x), lnk_data, invert)) {
                                 blob_x1 = IM_MIN(blob_x1, x);
                                 blob_y1 = IM_MIN(blob_y1, y);
                                 blob_x2 = IM_MAX(blob_x2, x);
@@ -890,9 +953,9 @@ bool imlib_get_regression(find_lines_list_lnk_data_t *out, image_t *ptr, rectang
                                 blob_pixels += 1;
                                 blob_cx += x;
                                 blob_cy += y;
-                                blob_a += x*x;
-                                blob_b += x*y;
-                                blob_c += y*y;
+                                blob_a += x * x;
+                                blob_b += x * y;
+                                blob_c += y * y;
                             }
                         }
                     }
@@ -927,10 +990,14 @@ bool imlib_get_regression(find_lines_list_lnk_data_t *out, image_t *ptr, rectang
             int small_blob_b = blob_b - ((mx * blob_cy) + (my * blob_cx)) + (blob_pixels * mx * my);
             int small_blob_c = blob_c - ((my * blob_cy) + (my * blob_cy)) + (blob_pixels * my * my);
 
-            float rotation = ((small_blob_a != small_blob_c) ? (fast_atan2f(2 * small_blob_b, small_blob_a - small_blob_c) / 2.0f) : 1.570796f) + 1.570796f; // PI/2
+            float rotation =
+                ((small_blob_a !=
+                  small_blob_c) ? (fast_atan2f(2 * small_blob_b, small_blob_a - small_blob_c) / 2.0f) : 1.570796f) + 1.570796f;                              // PI/2
 
             out->theta = fast_roundf(rotation * 57.295780) % 180; // * (180 / PI)
-            if (out->theta < 0) out->theta += 180;
+            if (out->theta < 0) {
+                out->theta += 180;
+            }
             out->rho = fast_roundf(((mx - roi->x) * cos_table[out->theta]) + ((my - roi->y) * sin_table[out->theta]));
 
             float part0 = (small_blob_a + small_blob_c) / 2.0f;
@@ -957,7 +1024,7 @@ bool imlib_get_regression(find_lines_list_lnk_data_t *out, image_t *ptr, rectang
                 out->line.x2 = fast_roundf((out->rho - (out->line.y2 * sin_table[out->theta])) / cos_table[out->theta]);
             }
 
-            if(lb_clip_line(&out->line, 0, 0, roi->w, roi->h)) {
+            if (lb_clip_line(&out->line, 0, 0, roi->w, roi->h)) {
                 out->line.x1 += roi->x;
                 out->line.y1 += roi->y;
                 out->line.x2 += roi->x;
@@ -969,35 +1036,34 @@ bool imlib_get_regression(find_lines_list_lnk_data_t *out, image_t *ptr, rectang
                 memset(out, 0, sizeof(find_lines_list_lnk_data_t));
             }
         }
-    } else { // Theil-Sen Estimator
-        int *x_histogram = fb_alloc0(ptr->w * sizeof(int), FB_ALLOC_NO_HINT); // Not roi so we don't have to adjust, we can burn the RAM.
-        int *y_histogram = fb_alloc0(ptr->h * sizeof(int), FB_ALLOC_NO_HINT); // Not roi so we don't have to adjust, we can burn the RAM.
-
-        long long *x_delta_histogram = fb_alloc0((2 * ptr->w) * sizeof(long long), FB_ALLOC_NO_HINT); // Not roi so we don't have to adjust, we can burn the RAM.
-        long long *y_delta_histogram = fb_alloc0((2 * ptr->h) * sizeof(long long), FB_ALLOC_NO_HINT); // Not roi so we don't have to adjust, we can burn the RAM.
+    } else {
+        // Theil-Sen Estimator
+        int *x_histogram = fb_alloc0(ptr->w * sizeof(int), FB_ALLOC_NO_HINT);
+        int *y_histogram = fb_alloc0(ptr->h * sizeof(int), FB_ALLOC_NO_HINT);
+        long long *x_delta_histogram = fb_alloc0((2 * ptr->w) * sizeof(long long), FB_ALLOC_NO_HINT);
+        long long *y_delta_histogram = fb_alloc0((2 * ptr->h) * sizeof(long long), FB_ALLOC_NO_HINT);
 
         uint32_t size;
         point_t *points = (point_t *) fb_alloc_all(&size, FB_ALLOC_NO_HINT);
         size_t points_max = size / sizeof(point_t);
         size_t points_count = 0;
 
-        if(points_max) {
+        if (points_max) {
             int blob_x1 = roi->x + roi->w - 1;
             int blob_y1 = roi->y + roi->h - 1;
             int blob_x2 = roi->x;
             int blob_y2 = roi->y;
             int blob_pixels = 0;
 
-            for (list_lnk_t *it = iterator_start_from_head(thresholds); it; it = iterator_next(it)) {
-                color_thresholds_list_lnk_data_t lnk_data;
-                iterator_get(thresholds, it, &lnk_data);
+            list_for_each(it, thresholds) {
+                color_thresholds_list_lnk_data_t *lnk_data = list_get_data(it);
 
                 switch (ptr->pixfmt) {
                     case PIXFORMAT_BINARY: {
                         for (int y = roi->y, yy = roi->y + roi->h; y < yy; y += y_stride) {
                             uint32_t *row_ptr = IMAGE_COMPUTE_BINARY_PIXEL_ROW_PTR(ptr, y);
                             for (int x = roi->x + (y % x_stride), xx = roi->x + roi->w; x < xx; x += x_stride) {
-                                if (COLOR_THRESHOLD_BINARY(IMAGE_GET_BINARY_PIXEL_FAST(row_ptr, x), &lnk_data, invert)) {
+                                if (COLOR_THRESHOLD_BINARY(IMAGE_GET_BINARY_PIXEL_FAST(row_ptr, x), lnk_data, invert)) {
                                     blob_x1 = IM_MIN(blob_x1, x);
                                     blob_y1 = IM_MIN(blob_y1, y);
                                     blob_x2 = IM_MAX(blob_x2, x);
@@ -1006,7 +1072,7 @@ bool imlib_get_regression(find_lines_list_lnk_data_t *out, image_t *ptr, rectang
                                     x_histogram[x]++;
                                     y_histogram[y]++;
 
-                                    if(points_count < points_max) {
+                                    if (points_count < points_max) {
                                         point_init(&points[points_count], x, y);
                                         points_count += 1;
                                     }
@@ -1019,7 +1085,7 @@ bool imlib_get_regression(find_lines_list_lnk_data_t *out, image_t *ptr, rectang
                         for (int y = roi->y, yy = roi->y + roi->h; y < yy; y += y_stride) {
                             uint8_t *row_ptr = IMAGE_COMPUTE_GRAYSCALE_PIXEL_ROW_PTR(ptr, y);
                             for (int x = roi->x + (y % x_stride), xx = roi->x + roi->w; x < xx; x += x_stride) {
-                                if (COLOR_THRESHOLD_GRAYSCALE(IMAGE_GET_GRAYSCALE_PIXEL_FAST(row_ptr, x), &lnk_data, invert)) {
+                                if (COLOR_THRESHOLD_GRAYSCALE(IMAGE_GET_GRAYSCALE_PIXEL_FAST(row_ptr, x), lnk_data, invert)) {
                                     blob_x1 = IM_MIN(blob_x1, x);
                                     blob_y1 = IM_MIN(blob_y1, y);
                                     blob_x2 = IM_MAX(blob_x2, x);
@@ -1028,7 +1094,7 @@ bool imlib_get_regression(find_lines_list_lnk_data_t *out, image_t *ptr, rectang
                                     x_histogram[x]++;
                                     y_histogram[y]++;
 
-                                    if(points_count < points_max) {
+                                    if (points_count < points_max) {
                                         point_init(&points[points_count], x, y);
                                         points_count += 1;
                                     }
@@ -1041,7 +1107,7 @@ bool imlib_get_regression(find_lines_list_lnk_data_t *out, image_t *ptr, rectang
                         for (int y = roi->y, yy = roi->y + roi->h; y < yy; y += y_stride) {
                             uint16_t *row_ptr = IMAGE_COMPUTE_RGB565_PIXEL_ROW_PTR(ptr, y);
                             for (int x = roi->x + (y % x_stride), xx = roi->x + roi->w; x < xx; x += x_stride) {
-                                if (COLOR_THRESHOLD_RGB565(IMAGE_GET_RGB565_PIXEL_FAST(row_ptr, x), &lnk_data, invert)) {
+                                if (COLOR_THRESHOLD_RGB565(IMAGE_GET_RGB565_PIXEL_FAST(row_ptr, x), lnk_data, invert)) {
                                     blob_x1 = IM_MIN(blob_x1, x);
                                     blob_y1 = IM_MIN(blob_y1, y);
                                     blob_x2 = IM_MAX(blob_x2, x);
@@ -1050,7 +1116,7 @@ bool imlib_get_regression(find_lines_list_lnk_data_t *out, image_t *ptr, rectang
                                     x_histogram[x]++;
                                     y_histogram[y]++;
 
-                                    if(points_count < points_max) {
+                                    if (points_count < points_max) {
                                         point_init(&points[points_count], x, y);
                                         points_count += 1;
                                     }
@@ -1074,12 +1140,14 @@ bool imlib_get_regression(find_lines_list_lnk_data_t *out, image_t *ptr, rectang
                     // The code below computes the average slope between all pairs of points.
                     // This is a N^2 operation that can easily blow up if the image is not threshold carefully...
 
-                    for(int i = 0; i < points_count; i++) {
+                    for (int i = 0; i < points_count; i++) {
                         point_t *p0 = &points[i];
-                        for(int j = i + 1; j < points_count; j++) {
+                        for (int j = i + 1; j < points_count; j++) {
                             point_t *p1 = &points[j];
-                            x_delta_histogram[p0->x - p1->x + ptr->w]++; // Note we allocated 1 extra above so we can do ptr->w instead of (ptr->w-1).
-                            y_delta_histogram[p0->y - p1->y + ptr->h]++; // Note we allocated 1 extra above so we can do ptr->h instead of (ptr->h-1).
+                            // Note we allocated 1 extra above so we can do ptr->w instead of (ptr->w-1).
+                            x_delta_histogram[p0->x - p1->x + ptr->w]++;
+                            // Note we allocated 1 extra above so we can do ptr->h instead of (ptr->h-1).
+                            y_delta_histogram[p0->y - p1->y + ptr->h]++;
                         }
                     }
 
@@ -1091,7 +1159,9 @@ bool imlib_get_regression(find_lines_list_lnk_data_t *out, image_t *ptr, rectang
                     float rotation = (mdx ? fast_atan2f(mdy, mdx) : 1.570796f) + 1.570796f; // PI/2
 
                     out->theta = fast_roundf(rotation * 57.295780) % 180; // * (180 / PI)
-                    if (out->theta < 0) out->theta += 180;
+                    if (out->theta < 0) {
+                        out->theta += 180;
+                    }
                     out->rho = fast_roundf(((mx - roi->x) * cos_table[out->theta]) + ((my - roi->y) * sin_table[out->theta]));
 
                     out->magnitude = fast_roundf(fast_sqrtf((mdx * mdx) + (mdy * mdy)));
@@ -1110,7 +1180,7 @@ bool imlib_get_regression(find_lines_list_lnk_data_t *out, image_t *ptr, rectang
                         out->line.x2 = fast_roundf((out->rho - (out->line.y2 * sin_table[out->theta])) / cos_table[out->theta]);
                     }
 
-                    if(lb_clip_line(&out->line, 0, 0, roi->w, roi->h)) {
+                    if (lb_clip_line(&out->line, 0, 0, roi->w, roi->h)) {
                         out->line.x1 += roi->x;
                         out->line.y1 += roi->y;
                         out->line.x2 += roi->x;

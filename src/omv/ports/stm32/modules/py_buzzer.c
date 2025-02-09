@@ -1,39 +1,48 @@
 /*
- * This file is part of the OpenMV project.
+ * SPDX-License-Identifier: MIT
  *
- * Copyright (c) 2013-2021 Ibrahim Abdelkader <iabdalkader@openmv.io>
- * Copyright (c) 2013-2021 Kwabena W. Agyeman <kwagyeman@openmv.io>
+ * Copyright (C) 2013-2024 OpenMV, LLC.
  *
- * This work is licensed under the MIT license, see the file LICENSE for details.
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
  *
  * Buzzer Python module.
  */
 #include "py/obj.h"
 
 #include "omv_boardconfig.h"
-#include STM32_HAL_H
 
 #if MICROPY_PY_BUZZER
+#include STM32_HAL_H
+#include "omv_gpio.h"
 
 static TIM_HandleTypeDef buzzer_tim_handle = {};
 
 static int buzzer_freq = OMV_BUZZER_FREQ;
 static int buzzer_duty = 0;
 
-static void buzzer_setup(int freq, int duty)
-{
+static void buzzer_setup(int freq, int duty) {
     int tclk = OMV_BUZZER_TIM_PCLK_FREQ() * 2;
     int period = (tclk / freq) - 1;
     int pulse = (period * duty) / 510;
 
     if (((buzzer_duty <= 0) || (255 < buzzer_duty)) && (0 < duty) && (duty <= 255)) {
-        GPIO_InitTypeDef GPIO_InitStructure;
-        GPIO_InitStructure.Pull = GPIO_NOPULL;
-        GPIO_InitStructure.Mode = GPIO_MODE_AF_PP;
-        GPIO_InitStructure.Speed = GPIO_SPEED_FREQ_LOW;
-        GPIO_InitStructure.Alternate = OMV_BUZZER_ALT;
-        GPIO_InitStructure.Pin = OMV_BUZZER_PIN;
-        HAL_GPIO_Init(OMV_BUZZER_PORT, &GPIO_InitStructure);
+        omv_gpio_config(OMV_BUZZER_PIN, OMV_GPIO_MODE_ALT, OMV_GPIO_PULL_NONE, OMV_GPIO_SPEED_LOW, -1);
 
         buzzer_tim_handle.Instance = OMV_BUZZER_TIM;
         buzzer_tim_handle.Init.Prescaler = 0;
@@ -58,7 +67,7 @@ static void buzzer_setup(int freq, int duty)
     } else if ((0 < buzzer_duty) && (buzzer_duty <= 255) && ((duty <= 0) || (255 < duty))) {
         HAL_TIM_PWM_Stop(&buzzer_tim_handle, OMV_BUZZER_TIM_CHANNEL);
         HAL_TIM_PWM_DeInit(&buzzer_tim_handle);
-        HAL_GPIO_DeInit(OMV_BUZZER_PORT, OMV_BUZZER_PIN);
+        omv_gpio_deinit(OMV_BUZZER_PIN);
     } else if ((0 < buzzer_duty) && (buzzer_duty <= 255) && (0 < duty) && (duty <= 255)) {
         __HAL_TIM_SET_AUTORELOAD(&buzzer_tim_handle, period);
         __HAL_TIM_SET_COMPARE(&buzzer_tim_handle, OMV_BUZZER_TIM_CHANNEL, pulse);
@@ -68,8 +77,7 @@ static void buzzer_setup(int freq, int duty)
     buzzer_duty = duty;
 }
 
-STATIC mp_obj_t py_buzzer_freq(uint n_args, const mp_obj_t *args)
-{
+static mp_obj_t py_buzzer_freq(uint n_args, const mp_obj_t *args) {
     if (!n_args) {
         return mp_obj_new_int(buzzer_freq);
     } else {
@@ -77,10 +85,9 @@ STATIC mp_obj_t py_buzzer_freq(uint n_args, const mp_obj_t *args)
         return mp_const_none;
     }
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(py_buzzer_freq_obj, 0, 1, py_buzzer_freq);
+static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(py_buzzer_freq_obj, 0, 1, py_buzzer_freq);
 
-STATIC mp_obj_t py_buzzer_duty(uint n_args, const mp_obj_t *args)
-{
+static mp_obj_t py_buzzer_duty(uint n_args, const mp_obj_t *args) {
     if (!n_args) {
         return mp_obj_new_int(buzzer_duty);
     } else {
@@ -88,7 +95,7 @@ STATIC mp_obj_t py_buzzer_duty(uint n_args, const mp_obj_t *args)
         return mp_const_none;
     }
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(py_buzzer_duty_obj, 0, 1, py_buzzer_duty);
+static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(py_buzzer_duty_obj, 0, 1, py_buzzer_duty);
 
 static const mp_rom_map_elem_t globals_dict_table[] = {
     { MP_ROM_QSTR(MP_QSTR___name__),        MP_ROM_QSTR(MP_QSTR_buzzer) },
@@ -97,15 +104,14 @@ static const mp_rom_map_elem_t globals_dict_table[] = {
     { MP_ROM_QSTR(MP_QSTR_duty),            MP_ROM_PTR(&py_buzzer_duty_obj) }
 };
 
-STATIC MP_DEFINE_CONST_DICT(globals_dict, globals_dict_table);
+static MP_DEFINE_CONST_DICT(globals_dict, globals_dict_table);
 
 const mp_obj_module_t buzzer_module = {
     .base = { &mp_type_module },
     .globals = (mp_obj_t) &globals_dict,
 };
 
-void py_buzzer_init0()
-{
+void py_buzzer_init0() {
     buzzer_setup(OMV_BUZZER_FREQ, 0);
 }
 

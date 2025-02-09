@@ -17,15 +17,17 @@ SRCS += $(addprefix alloc/,     \
 
 SRCS += $(addprefix common/,    \
 	array.c                     \
-	ff_wrapper.c                \
-	ini.c                       \
 	ringbuf.c                   \
 	trace.c                     \
 	mutex.c                     \
+	vospi.c                     \
+	pendsv.c                    \
 	usbdbg.c                    \
 	tinyusb_debug.c             \
-	sensor_utils.c              \
-	factoryreset.c              \
+	file_utils.c                \
+	mp_utils.c                  \
+	nosys_stubs.c               \
+	omv_csi.c                   \
    )
 
 SRCS += $(addprefix sensors/,   \
@@ -37,10 +39,14 @@ SRCS += $(addprefix sensors/,   \
 	ov9650.c                    \
 	mt9v0xx.c                   \
 	mt9m114.c                   \
+	boson.c                     \
 	lepton.c                    \
 	hm01b0.c                    \
 	hm0360.c                    \
 	gc2145.c                    \
+	genx320.c                   \
+	pag7920.c                   \
+	pag7936.c                   \
 	paj6100.c                   \
 	frogeye2020.c               \
    )
@@ -74,7 +80,7 @@ SRCS += $(addprefix imlib/,     \
 	integral_mw.c               \
 	isp.c                       \
 	jpegd.c                     \
-	jpeg.c                      \
+	jpege.c                     \
 	lodepng.c                   \
 	png.c                       \
 	kmeans.c                    \
@@ -87,7 +93,6 @@ SRCS += $(addprefix imlib/,     \
 	orb.c                       \
 	phasecorrelation.c          \
 	point.c                     \
-	pool.c                      \
 	ppm.c                       \
 	qrcode.c                    \
 	qsort.c                     \
@@ -106,6 +111,10 @@ SRCS += $(addprefix imlib/,     \
 SRCS += $(wildcard ports/$(PORT)/*.c)
 
 OBJS = $(addprefix $(BUILD)/, $(SRCS:.c=.o))
+ifeq ($(USE_CLANG),1)
+CLANG_OBJS = $(BUILD)/imlib/bayer.o
+endif
+
 OBJ_DIRS = $(sort $(dir $(OBJS)))
 
 all: | $(OBJ_DIRS) $(OBJS)
@@ -119,5 +128,12 @@ $(BUILD)/%.o : %.c
 $(BUILD)/%.o : %.s
 	$(ECHO) "AS $<"
 	$(AS) $(AFLAGS) $< -o $@
+
+# Rule for compiling with clang
+$(CLANG_OBJS): $(BUILD)/%.o : %.c
+	$(ECHO) "CL $<"
+	$(CLANG) $(CLANG_FLAGS) -c -o $@ $<
+
+$(BUILD)/imlib/fmath.o: override CFLAGS += -fno-strict-aliasing
 
 -include $(OBJS:%.o=%.d)

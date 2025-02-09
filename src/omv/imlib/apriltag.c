@@ -1,13 +1,32 @@
 /*
- * This file is part of the OpenMV project.
+ * Copyright (C) 2013-2016, The Regents of The University of Michigan.
  *
- * Copyright (c) 2013-2021 Ibrahim Abdelkader <iabdalkader@openmv.io>
- * Copyright (c) 2013-2021 Kwabena W. Agyeman <kwagyeman@openmv.io>
+ * This software was developed in the APRIL Robotics Lab under the
+ * direction of Edwin Olson, ebolson@umich.edu. This software may be
+ * available under alternative licensing terms; contact the address above.
  *
- * This work is licensed under the MIT license, see the file LICENSE for details.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * AprilTags library.
+ * 1. Redistributions of source code must retain the above copyright notice,
+ *    this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ *    this list of conditions and the following disclaimer in the documentation
+ *    and/or other materials provided with the distribution.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
+ * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  */
+// *INDENT-OFF*
 #include <float.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -19,37 +38,6 @@
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-variable"
 
-/* Copyright (C) 2013-2016, The Regents of The University of Michigan.
-All rights reserved.
-
-This software was developed in the APRIL Robotics Lab under the
-direction of Edwin Olson, ebolson@umich.edu. This software may be
-available under alternative licensing terms; contact the address above.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are met:
-
-1. Redistributions of source code must retain the above copyright notice, this
-   list of conditions and the following disclaimer.
-2. Redistributions in binary form must reproduce the above copyright notice,
-   this list of conditions and the following disclaimer in the documentation
-   and/or other materials provided with the distribution.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
-ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
-WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
-ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
-(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
-LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
-ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
-The views and conclusions contained in the software and documentation are those
-of the authors and should not be interpreted as representing official policies,
-either expressed or implied, of the Regents of The University of Michigan.
-*/
 #define fprintf(format, ...)
 #define free(ptr) ({ umm_free(ptr); })
 #define malloc(size) ({ void *_r = umm_malloc(size); if(!_r) umm_alloc_fail(); _r; })
@@ -81,8 +69,6 @@ either expressed or implied, of the Regents of The University of Michigan.
 #define log2(x) fast_log2(x)
 #undef log2f
 #define log2f(x) fast_log2(x)
-#define sin(x) arm_sin_f32(x)
-#define cos(x) arm_cos_f32(x)
 #define fmin(a, b) ({ __typeof__ (a) _a = (a); __typeof__ (b) _b = (b); _a < _b ? _a : _b; })
 #define fminf(a, b) ({ __typeof__ (a) _a = (a); __typeof__ (b) _b = (b); _a < _b ? _a : _b; })
 #define fmax(a, b) ({ __typeof__ (a) _a = (a); __typeof__ (b) _b = (b); _a > _b ? _a : _b; })
@@ -1794,7 +1780,7 @@ matd_t *matd_transpose(const matd_t *a)
 static
 float matd_det_general(const matd_t *a)
 {
-    // Use LU decompositon to calculate the determinant
+    // Use LU decomposition to calculate the determinant
     matd_plu_t *mlu = matd_plu(a);
     matd_t *L = matd_plu_l(mlu);
     matd_t *U = matd_plu_u(mlu);
@@ -5321,6 +5307,7 @@ void apriltag_detections_destroy(zarray_t *detections);
 //////// "tag16h5"
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+#ifdef IMLIB_ENABLE_APRILTAGS_TAG16H5
 const apriltag_family_t tag16h5 = {
     .ncodes = 30,
     .black_border = 1,
@@ -5359,11 +5346,13 @@ const apriltag_family_t tag16h5 = {
         0x000000000000af2eUL
     }
 };
+#endif // IMLIB_ENABLE_APRILTAGS_TAG16H5
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 //////// "tag25h7"
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+#ifdef IMLIB_ENABLE_APRILTAGS_TAG25H7
 const apriltag_family_t tag25h7 = {
     .ncodes = 242,
     .black_border = 1,
@@ -5614,11 +5603,13 @@ const apriltag_family_t tag25h7 = {
         0x0000000001233a70UL
     }
 };
+#endif // IMLIB_ENABLE_APRILTAGS_TAG25H7
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 //////// "tag25h9"
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+#ifdef IMLIB_ENABLE_APRILTAGS_TAG25H9
 const apriltag_family_t tag25h9 = {
     .ncodes = 35,
     .black_border = 1,
@@ -5662,11 +5653,13 @@ const apriltag_family_t tag25h9 = {
         0x0000000000b991ceUL
     }
 };
+#endif // IMLIB_ENABLE_APRILTAGS_TAG25H9
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 //////// "tag36h10"
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+#ifdef IMLIB_ENABLE_APRILTAGS_TAG36H10
 const apriltag_family_t tag36h10 = {
     .ncodes = 2320,
     .black_border = 1,
@@ -7995,12 +7988,13 @@ const apriltag_family_t tag36h10 = {
         0x0000000de5bc4369UL
     }
 };
-
+#endif // IMLIB_ENABLE_APRILTAGS_TAG36H10
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 //////// "tag36h11"
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+#ifdef IMLIB_ENABLE_APRILTAGS_TAG36H11
 const apriltag_family_t tag36h11 = {
     .ncodes = 587,
     .black_border = 1,
@@ -8596,11 +8590,13 @@ const apriltag_family_t tag36h11 = {
         0x0000000e83be4b73UL
     }
 };
+#endif // IMLIB_ENABLE_APRILTAGS_TAG36H11
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 //////// "artoolkit"
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+#ifdef IMLIB_ENABLE_APRILTAGS_ARTOOLKIT
 const apriltag_family_t artoolkit = {
     .ncodes = 512,
     .black_border = 1,
@@ -9121,6 +9117,7 @@ const apriltag_family_t artoolkit = {
         0x000923d963d8UL
     }
 };
+#endif // IMLIB_ENABLE_APRILTAGS_ARTOOLKIT
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 //////// "union_find.h"
@@ -9784,7 +9781,7 @@ int fit_quad(apriltag_detector_t *td, image_u8_t *im, zarray_t *cluster, struct 
     if ((!overrideMode) && (dot < 0))
         return 0;
 
-    // we now sort the points according to theta. This is a prepatory
+    // we now sort the points according to theta. This is a preparatory
     // step for segmenting them into four lines.
     if (1) {
         //        zarray_sort(cluster, pt_compare_theta);
@@ -10246,7 +10243,7 @@ image_u8_t *threshold(apriltag_detector_t *td, image_u8_t *im)
     // first, collect min/max statistics for each tile
     for (int ty = 0; ty < th; ty++) {
         for (int tx = 0; tx < tw; tx++) {
-#if defined( OPTIMIZED ) && (defined(ARM_MATH_CM7) || defined(ARM_MATH_CM4))
+#if defined( OPTIMIZED ) && defined(ARM_MATH_DSP)
         uint32_t tmp, max32 = 0, min32 = 0xffffffff;
         for (int dy=0; dy < tilesz; dy++) {
             uint32_t v = *(uint32_t *)&im->buf[(ty*tilesz+dy)*s + tx*tilesz];
@@ -10415,7 +10412,7 @@ image_u8_t *threshold(apriltag_detector_t *td, image_u8_t *im)
         fb_free(); // im_min_tmp
         fb_free(); // im_max_tmp
     }
-#if defined( OPTIMIZED ) && (defined(ARM_MATH_CM7) || defined(ARM_MATH_CM4))
+#if defined( OPTIMIZED ) && defined(ARM_MATH_DSP)
     if ((s & 0x3) == 0 && tilesz == 4) // if each line is a multiple of 4, we can do this faster
     {
         const uint32_t lowcontrast = 0x7f7f7f7f;
@@ -11957,36 +11954,48 @@ void imlib_find_apriltags(list_t *out, image_t *ptr, rectangle_t *roi, apriltag_
     umm_init_x(((fb_avail() - fb_alloc_need) / resolution) * resolution);
     apriltag_detector_t *td = apriltag_detector_create();
 
+    #ifdef IMLIB_ENABLE_APRILTAGS_TAG16H5
     if (families & TAG16H5) {
         apriltag_detector_add_family(td, (apriltag_family_t *) &tag16h5);
     }
+    #endif
 
+    #ifdef IMLIB_ENABLE_APRILTAGS_TAG25H7
     if (families & TAG25H7) {
         apriltag_detector_add_family(td, (apriltag_family_t *) &tag25h7);
     }
+    #endif
 
+    #ifdef IMLIB_ENABLE_APRILTAGS_TAG25H9
     if (families & TAG25H9) {
         apriltag_detector_add_family(td, (apriltag_family_t *) &tag25h9);
     }
+    #endif
 
+    #ifdef IMLIB_ENABLE_APRILTAGS_TAG36H10
     if (families & TAG36H10) {
         apriltag_detector_add_family(td, (apriltag_family_t *) &tag36h10);
     }
+    #endif
 
+    #ifdef IMLIB_ENABLE_APRILTAGS_TAG36H11
     if (families & TAG36H11) {
         apriltag_detector_add_family(td, (apriltag_family_t *) &tag36h11);
     }
+    #endif
 
+    #ifdef IMLIB_ENABLE_APRILTAGS_ARTOOLKIT
     if (families & ARTOOLKIT) {
         apriltag_detector_add_family(td, (apriltag_family_t *) &artoolkit);
     }
+    #endif
 
     image_t img;
     img.w = roi->w;
     img.h = roi->h;
     img.pixfmt = PIXFORMAT_GRAYSCALE;
     img.data = fb_alloc(image_size(&img), FB_ALLOC_NO_HINT);
-    imlib_draw_image(&img, ptr, 0, 0, 1.f, 1.f, roi, -1, 256, NULL, NULL, 0, NULL, NULL);
+    imlib_draw_image(&img, ptr, 0, 0, 1.f, 1.f, roi, -1, 255, NULL, NULL, 0, NULL, NULL, NULL);
 
     image_u8_t im;
     im.width = roi->w;
@@ -12023,29 +12032,41 @@ void imlib_find_apriltags(list_t *out, image_t *ptr, rectangle_t *roi, apriltag_
         lnk_data.id = det->id;
         lnk_data.family = 0;
 
+        #ifdef IMLIB_ENABLE_APRILTAGS_TAG16H5
         if(det->family == &tag16h5) {
             lnk_data.family |= TAG16H5;
         }
+        #endif
 
+        #ifdef IMLIB_ENABLE_APRILTAGS_TAG25H7
         if(det->family == &tag25h7) {
             lnk_data.family |= TAG25H7;
         }
+        #endif
 
+        #ifdef IMLIB_ENABLE_APRILTAGS_TAG25H9
         if(det->family == &tag25h9) {
             lnk_data.family |= TAG25H9;
         }
+        #endif
 
+        #ifdef IMLIB_ENABLE_APRILTAGS_TAG36H10
         if(det->family == &tag36h10) {
             lnk_data.family |= TAG36H10;
         }
+        #endif
 
+        #ifdef IMLIB_ENABLE_APRILTAGS_TAG36H11
         if(det->family == &tag36h11) {
             lnk_data.family |= TAG36H11;
         }
+        #endif
 
+        #ifdef IMLIB_ENABLE_APRILTAGS_ARTOOLKIT
         if(det->family == &artoolkit) {
             lnk_data.family |= ARTOOLKIT;
         }
+        #endif
 
         lnk_data.hamming = det->hamming;
         lnk_data.centroid_x = det->c[0] + roi->x;
@@ -12090,7 +12111,7 @@ void imlib_find_rects(list_t *out, image_t *ptr, rectangle_t *roi, uint32_t thre
     img.h = roi->h;
     img.pixfmt = PIXFORMAT_GRAYSCALE;
     img.data = fb_alloc(image_size(&img), FB_ALLOC_NO_HINT);
-    imlib_draw_image(&img, ptr, 0, 0, 1.f, 1.f, roi, -1, 256, NULL, NULL, 0, NULL, NULL);
+    imlib_draw_image(&img, ptr, 0, 0, 1.f, 1.f, roi, -1, 255, NULL, NULL, 0, NULL, NULL, NULL);
 
     image_u8_t im;
     im.width = roi->w;
@@ -12219,7 +12240,7 @@ void imlib_find_rects(list_t *out, image_t *ptr, rectangle_t *roi, uint32_t thre
         uint32_t magnitude = 0;
 
         for (int i = 0; i < 4; i++) {
-            if(!lb_clip_line(&lines[i], 0, 0, roi->w, roi->h)) {
+            if(!lb_clip_line(&lines[i], 0, 0, ptr->w, ptr->h)) {
                 continue;
             }
 
@@ -12445,7 +12466,7 @@ void imlib_rotation_corr(image_t *img, float x_rotation, float y_rotation, float
                     break;
                 }
             }
-        } else { // warp persepective
+        } else { // warp perspective
             switch (img->pixfmt) {
                 case PIXFORMAT_BINARY: {
                     uint32_t *tmp = (uint32_t *) data;
@@ -12534,5 +12555,5 @@ void imlib_rotation_corr(image_t *img, float x_rotation, float y_rotation, float
 
     fb_free();
 }
-#endif //IMLIB_ENABLE_ROTATION_CORR
+#endif //IMLIB_ENABLE_ROTATION_CORR *INDENT-ON*
 #pragma GCC diagnostic pop

@@ -1,10 +1,25 @@
 /*
- * This file is part of the OpenMV project.
+ * SPDX-License-Identifier: MIT
  *
- * Copyright (c) 2013-2021 Ibrahim Abdelkader <iabdalkader@openmv.io>
- * Copyright (c) 2013-2021 Kwabena W. Agyeman <kwagyeman@openmv.io>
+ * Copyright (C) 2013-2024 OpenMV, LLC.
  *
- * This work is licensed under the MIT license, see the file LICENSE for details.
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
  *
  * Framebuffer functions.
  */
@@ -13,23 +28,24 @@
 #include <stdint.h>
 #include "imlib.h"
 #include "mutex.h"
-#include "common.h"
+#include "omv_common.h"
 
 // DMA Buffers need to be aligned by cache lines or 16 bytes.
 #ifndef __DCACHE_PRESENT
-#define FRAMEBUFFER_ALIGNMENT 16
+#define FRAMEBUFFER_ALIGNMENT    16
 #else
-#define FRAMEBUFFER_ALIGNMENT __SCB_DCACHE_LINE_SIZE
+#define FRAMEBUFFER_ALIGNMENT    __SCB_DCACHE_LINE_SIZE
 #endif
 
 typedef struct framebuffer {
-    int32_t x,y;
-    int32_t w,h;
-    int32_t u,v;
+    int32_t x, y;
+    int32_t w, h;
+    int32_t u, v;
     PIXFORMAT_STRUCT;
     int32_t streaming_enabled;
-    uint32_t raw_buffer_size;
-    int32_t n_buffers;
+    uint32_t buff_size;
+    uint32_t n_buffers;
+    uint32_t frame_size;
     int32_t head;
     volatile int32_t tail;
     bool check_head;
@@ -40,8 +56,9 @@ typedef struct framebuffer {
 extern framebuffer_t *framebuffer;
 
 typedef enum {
-    FB_NO_FLAGS =   (0 << 0),
-    FB_PEEK     =   (1 << 0),   // If set, will not move the head/tail.
+    FB_NO_FLAGS   = (0 << 0),
+    FB_PEEK       = (1 << 0),   // If set, will not move the head/tail.
+    FB_INVALIDATE = (1 << 1),   // If set, invalidate the buffer on return.
 } framebuffer_flags_t;
 
 typedef struct vbuffer {
@@ -56,7 +73,7 @@ typedef struct vbuffer {
 } vbuffer_t;
 
 typedef struct jpegbuffer {
-    int32_t w,h;
+    int32_t w, h;
     int32_t size;
     int32_t enabled;
     int32_t quality;
@@ -101,17 +118,14 @@ void framebuffer_init_from_image(image_t *img);
 // if the src is JPEG and fits in the JPEG buffer, or encode and stream src image to the IDE if not.
 void framebuffer_update_jpeg_buffer();
 
-// Clears out all old captures frames in the framebuffer.
-void framebuffer_flush_buffers();
+// Clear the framebuffer FIFO. If fifo_flush is true, reset and discard all framebuffers,
+// otherwise, retain the last frame in the fifo.
+void framebuffer_flush_buffers(bool fifo_flush);
 
-// Resets all buffers (for use after aborting)
-void framebuffer_reset_buffers();
-
-// Controls the number of virtual buffers in the frame buffer.
+// Set the number of virtual buffers in the frame buffer.
+// If n_buffers = -1 the number of virtual buffers will be set to 3 each  if possible.
+// If n_buffers = 1 the whole framebuffer is used. In this case, `frame_size` is ignored.
 int framebuffer_set_buffers(int32_t n_buffers);
-
-// Automatically finds the best buffering size given RAM.
-void framebuffer_auto_adjust_buffers();
 
 // Call when done with the current vbuffer to mark it as free.
 void framebuffer_free_current_buffer();
@@ -132,7 +146,7 @@ vbuffer_t *framebuffer_get_tail(framebuffer_flags_t flags);
 char *framebuffer_get_buffers_end();
 
 // Use these macros to get a pointer to main or JPEG framebuffer.
-#define MAIN_FB()           (framebuffer)
-#define JPEG_FB()           (jpeg_framebuffer)
+#define MAIN_FB()    (framebuffer)
+#define JPEG_FB()    (jpeg_framebuffer)
 
 #endif /* __FRAMEBUFFER_H__ */

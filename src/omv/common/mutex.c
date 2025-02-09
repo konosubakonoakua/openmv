@@ -1,10 +1,25 @@
 /*
- * This file is part of the OpenMV project.
+ * SPDX-License-Identifier: MIT
  *
- * Copyright (c) 2013-2021 Ibrahim Abdelkader <iabdalkader@openmv.io>
- * Copyright (c) 2013-2021 Kwabena W. Agyeman <kwagyeman@openmv.io>
+ * Copyright (C) 2013-2024 OpenMV, LLC.
  *
- * This work is licensed under the MIT license, see the file LICENSE for details.
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
  *
  * Mutex implementation.
  * This is a standard implementation of mutexs on ARM processors following the ARM guide.
@@ -14,19 +29,17 @@
  * CPUs the locking function is implemented with atomic access using disable/enable IRQs.
  */
 #include "mutex.h"
-#include "cmsis_gcc.h"
+#include "cmsis_compiler.h"
 #include "py/mphal.h"
 
-void mutex_init0(omv_mutex_t *mutex)
-{
+void mutex_init0(omv_mutex_t *mutex) {
     __DMB();
     mutex->tid = 0;
     mutex->lock = 0;
     mutex->last_tid = 0;
 }
 
-static void _mutex_lock(omv_mutex_t *mutex, uint32_t tid, bool blocking)
-{
+static void _mutex_lock(omv_mutex_t *mutex, uint32_t tid, bool blocking) {
     #if (__ARM_ARCH < 7)
     do {
         __disable_irq();
@@ -50,13 +63,11 @@ static void _mutex_lock(omv_mutex_t *mutex, uint32_t tid, bool blocking)
     __DMB();
 }
 
-void mutex_lock(omv_mutex_t *mutex, uint32_t tid)
-{
+void mutex_lock(omv_mutex_t *mutex, uint32_t tid) {
     _mutex_lock(mutex, tid, true);
 }
 
-int mutex_try_lock(omv_mutex_t *mutex, uint32_t tid)
-{
+int mutex_try_lock(omv_mutex_t *mutex, uint32_t tid) {
     // If the mutex is already locked by the current thread then
     // release it and return without locking, otherwise try to lock it.
     if (mutex->tid == tid) {
@@ -68,8 +79,7 @@ int mutex_try_lock(omv_mutex_t *mutex, uint32_t tid)
     return (mutex->tid == tid);
 }
 
-int mutex_try_lock_alternate(omv_mutex_t *mutex, uint32_t tid)
-{
+int mutex_try_lock_alternate(omv_mutex_t *mutex, uint32_t tid) {
     if (mutex->last_tid != tid) {
         if (mutex_try_lock(mutex, tid)) {
             mutex->last_tid = tid;
@@ -80,8 +90,7 @@ int mutex_try_lock_alternate(omv_mutex_t *mutex, uint32_t tid)
     return 0;
 }
 
-int mutex_lock_timeout(omv_mutex_t *mutex, uint32_t tid, uint32_t timeout)
-{
+int mutex_lock_timeout(omv_mutex_t *mutex, uint32_t tid, uint32_t timeout) {
     mp_uint_t tick_start = mp_hal_ticks_ms();
     while ((mp_hal_ticks_ms() - tick_start) >= timeout) {
         if (mutex_try_lock(mutex, tid)) {
@@ -92,8 +101,7 @@ int mutex_lock_timeout(omv_mutex_t *mutex, uint32_t tid, uint32_t timeout)
     return 0;
 }
 
-void mutex_unlock(omv_mutex_t *mutex, uint32_t tid)
-{
+void mutex_unlock(omv_mutex_t *mutex, uint32_t tid) {
     if (mutex->tid == tid) {
         __DMB();
         mutex->tid = 0;

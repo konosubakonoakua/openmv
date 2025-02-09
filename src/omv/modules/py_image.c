@@ -1,10 +1,25 @@
 /*
- * This file is part of the OpenMV project.
+ * SPDX-License-Identifier: MIT
  *
- * Copyright (c) 2013-2021 Ibrahim Abdelkader <iabdalkader@openmv.io>
- * Copyright (c) 2013-2021 Kwabena W. Agyeman <kwagyeman@openmv.io>
+ * Copyright (C) 2013-2024 OpenMV, LLC.
  *
- * This work is licensed under the MIT license, see the file LICENSE for details.
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
  *
  * Image Python module.
  */
@@ -23,7 +38,7 @@
 
 #include "imlib.h"
 #include "array.h"
-#include "ff_wrapper.h"
+#include "file_utils.h"
 #include "xalloc.h"
 #include "fb_alloc.h"
 #include "framebuffer.h"
@@ -34,40 +49,39 @@
 #if defined(IMLIB_ENABLE_IMAGE_IO)
 #include "py_imageio.h"
 #endif
+#include "ulab/code/ndarray.h"
 
-static const mp_obj_type_t py_cascade_type;
-static const mp_obj_type_t py_image_type;
-
-#if defined(IMLIB_ENABLE_IMAGE_FILE_IO)
-extern const char *ffs_strerror(FRESULT res);
-#endif
+const mp_obj_type_t py_image_type;
 
 // Haar Cascade ///////////////////////////////////////////////////////////////
+
+#ifdef IMLIB_ENABLE_FEATURES
+static const mp_obj_type_t py_cascade_type;
 
 typedef struct _py_cascade_obj_t {
     mp_obj_base_t base;
     struct cascade _cobj;
 } py_cascade_obj_t;
 
-void *py_cascade_cobj(mp_obj_t cascade)
-{
+void *py_cascade_cobj(mp_obj_t cascade) {
     PY_ASSERT_TYPE(cascade, &py_cascade_type);
-    return &((py_cascade_obj_t *)cascade)->_cobj;
+    return &((py_cascade_obj_t *) cascade)->_cobj;
 }
 
-static void py_cascade_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind)
-{
+static void py_cascade_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind) {
     py_cascade_obj_t *self = self_in;
     mp_printf(print, "{\"width\":%d, \"height\":%d, \"n_stages\":%d, \"n_features\":%d, \"n_rectangles\":%d}",
-            self->_cobj.window.w, self->_cobj.window.h, self->_cobj.n_stages,
-            self->_cobj.n_features, self->_cobj.n_rectangles);
+              self->_cobj.window.w, self->_cobj.window.h, self->_cobj.n_stages,
+              self->_cobj.n_features, self->_cobj.n_rectangles);
 }
 
-static const mp_obj_type_t py_cascade_type = {
-    { &mp_type_type },
-    .name  = MP_QSTR_Cascade,
-    .print = py_cascade_print,
-};
+static MP_DEFINE_CONST_OBJ_TYPE(
+    py_cascade_type,
+    MP_QSTR_Cascade,
+    MP_TYPE_FLAG_NONE,
+    print, py_cascade_print
+    );
+#endif // IMLIB_ENABLE_FEATURES
 
 // Keypoints object ///////////////////////////////////////////////////////////
 
@@ -80,10 +94,13 @@ typedef struct _py_kp_obj_t {
     bool normalized;
 } py_kp_obj_t;
 
-static void py_kp_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind)
-{
+static void py_kp_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind) {
     py_kp_obj_t *self = self_in;
-    mp_printf(print, "{\"size\":%d, \"threshold\":%d, \"normalized\":%d}", array_length(self->kpts), self->threshold, self->normalized);
+    mp_printf(print,
+              "{\"size\":%d, \"threshold\":%d, \"normalized\":%d}",
+              array_length(self->kpts),
+              self->threshold,
+              self->normalized);
 }
 
 mp_obj_t py_kp_unary_op(mp_unary_op_t op, mp_obj_t self_in) {
@@ -97,9 +114,9 @@ mp_obj_t py_kp_unary_op(mp_unary_op_t op, mp_obj_t self_in) {
     }
 }
 
-static mp_obj_t py_kp_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t value)
-{
-    if (value == MP_OBJ_SENTINEL) { // load
+static mp_obj_t py_kp_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t value) {
+    if (value == MP_OBJ_SENTINEL) {
+        // load
         py_kp_obj_t *self = self_in;
         int size = array_length(self->kpts);
         int i = mp_get_index(self->base.type, size, index, false);
@@ -114,16 +131,16 @@ static mp_obj_t py_kp_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t value)
     return MP_OBJ_NULL; // op not supported
 }
 
-static const mp_obj_type_t py_kp_type = {
-    { &mp_type_type },
-    .name  = MP_QSTR_kp_desc,
-    .print = py_kp_print,
-    .subscr = py_kp_subscr,
-    .unary_op = py_kp_unary_op,
-};
+static MP_DEFINE_CONST_OBJ_TYPE(
+    py_kp_type,
+    MP_QSTR_kp_desc,
+    MP_TYPE_FLAG_NONE,
+    print, py_kp_print,
+    subscr, py_kp_subscr,
+    unary_op, py_kp_unary_op
+    );
 
-py_kp_obj_t *py_kpts_obj(mp_obj_t kpts_obj)
-{
+py_kp_obj_t *py_kpts_obj(mp_obj_t kpts_obj) {
     PY_ASSERT_TYPE(kpts_obj, &py_kp_type);
     return kpts_obj;
 }
@@ -139,24 +156,23 @@ typedef struct _py_lbp_obj_t {
     uint8_t *hist;
 } py_lbp_obj_t;
 
-static void py_lbp_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind)
-{
+static void py_lbp_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind) {
     mp_printf(print, "{}");
 }
 
-static const mp_obj_type_t py_lbp_type = {
-    { &mp_type_type },
-    .name  = MP_QSTR_lbp_desc,
-    .print = py_lbp_print,
-};
-
+static MP_DEFINE_CONST_OBJ_TYPE(
+    py_lbp_type,
+    MP_QSTR_lbp_desc,
+    MP_TYPE_FLAG_NONE,
+    print, py_lbp_print
+    );
 #endif // IMLIB_ENABLE_FIND_LBP
 
 // Keypoints Match Object /////////////////////////////////////////////////////
 
 #if defined(IMLIB_ENABLE_DESCRIPTOR) && defined(IMLIB_ENABLE_FIND_KEYPOINTS)
 
-#define kptmatch_obj_size 9
+#define kptmatch_obj_size    9
 typedef struct _py_kptmatch_obj_t {
     mp_obj_base_t base;
     mp_obj_t cx, cy;
@@ -166,17 +182,16 @@ typedef struct _py_kptmatch_obj_t {
     mp_obj_t match;
 } py_kptmatch_obj_t;
 
-static void py_kptmatch_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind)
-{
+static void py_kptmatch_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind) {
     py_kptmatch_obj_t *self = self_in;
     mp_printf(print, "{\"cx\":%d, \"cy\":%d, \"x\":%d, \"y\":%d, \"w\":%d, \"h\":%d, \"count\":%d, \"theta\":%d}",
               mp_obj_get_int(self->cx), mp_obj_get_int(self->cy), mp_obj_get_int(self->x), mp_obj_get_int(self->y),
               mp_obj_get_int(self->w),  mp_obj_get_int(self->h),  mp_obj_get_int(self->count), mp_obj_get_int(self->theta));
 }
 
-static mp_obj_t py_kptmatch_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t value)
-{
-    if (value == MP_OBJ_SENTINEL) { // load
+static mp_obj_t py_kptmatch_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t value) {
+    if (value == MP_OBJ_SENTINEL) {
+        // load
         py_kptmatch_obj_t *self = self_in;
         if (MP_OBJ_IS_TYPE(index, &mp_type_slice)) {
             mp_bound_slice_t slice;
@@ -202,34 +217,60 @@ static mp_obj_t py_kptmatch_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t va
     return MP_OBJ_NULL; // op not supported
 }
 
-mp_obj_t py_kptmatch_cx(mp_obj_t self_in)     { return ((py_kptmatch_obj_t *) self_in)->cx;    }
-mp_obj_t py_kptmatch_cy(mp_obj_t self_in)     { return ((py_kptmatch_obj_t *) self_in)->cy;    }
-mp_obj_t py_kptmatch_x (mp_obj_t self_in)     { return ((py_kptmatch_obj_t *) self_in)->x;     }
-mp_obj_t py_kptmatch_y (mp_obj_t self_in)     { return ((py_kptmatch_obj_t *) self_in)->y;     }
-mp_obj_t py_kptmatch_w (mp_obj_t self_in)     { return ((py_kptmatch_obj_t *) self_in)->w;     }
-mp_obj_t py_kptmatch_h (mp_obj_t self_in)     { return ((py_kptmatch_obj_t *) self_in)->h;     }
-mp_obj_t py_kptmatch_count(mp_obj_t self_in)  { return ((py_kptmatch_obj_t *) self_in)->count; }
-mp_obj_t py_kptmatch_theta(mp_obj_t self_in)  { return ((py_kptmatch_obj_t *) self_in)->theta; }
-mp_obj_t py_kptmatch_match(mp_obj_t self_in)  { return ((py_kptmatch_obj_t *) self_in)->match; }
-mp_obj_t py_kptmatch_rect(mp_obj_t  self_in)  {
+mp_obj_t py_kptmatch_cx(mp_obj_t self_in) {
+    return ((py_kptmatch_obj_t *) self_in)->cx;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_kptmatch_cx_obj, py_kptmatch_cx);
+
+mp_obj_t py_kptmatch_cy(mp_obj_t self_in) {
+    return ((py_kptmatch_obj_t *) self_in)->cy;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_kptmatch_cy_obj, py_kptmatch_cy);
+
+mp_obj_t py_kptmatch_x(mp_obj_t self_in) {
+    return ((py_kptmatch_obj_t *) self_in)->x;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_kptmatch_x_obj, py_kptmatch_x);
+
+mp_obj_t py_kptmatch_y(mp_obj_t self_in) {
+    return ((py_kptmatch_obj_t *) self_in)->y;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_kptmatch_y_obj, py_kptmatch_y);
+
+mp_obj_t py_kptmatch_w(mp_obj_t self_in) {
+    return ((py_kptmatch_obj_t *) self_in)->w;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_kptmatch_w_obj, py_kptmatch_w);
+
+mp_obj_t py_kptmatch_h(mp_obj_t self_in) {
+    return ((py_kptmatch_obj_t *) self_in)->h;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_kptmatch_h_obj, py_kptmatch_h);
+
+mp_obj_t py_kptmatch_count(mp_obj_t self_in) {
+    return ((py_kptmatch_obj_t *) self_in)->count;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_kptmatch_count_obj, py_kptmatch_count);
+
+mp_obj_t py_kptmatch_theta(mp_obj_t self_in) {
+    return ((py_kptmatch_obj_t *) self_in)->theta;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_kptmatch_theta_obj, py_kptmatch_theta);
+
+mp_obj_t py_kptmatch_match(mp_obj_t self_in) {
+    return ((py_kptmatch_obj_t *) self_in)->match;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_kptmatch_match_obj, py_kptmatch_match);
+
+mp_obj_t py_kptmatch_rect(mp_obj_t self_in) {
     return mp_obj_new_tuple(4, (mp_obj_t []) {((py_kptmatch_obj_t *) self_in)->x,
                                               ((py_kptmatch_obj_t *) self_in)->y,
                                               ((py_kptmatch_obj_t *) self_in)->w,
                                               ((py_kptmatch_obj_t *) self_in)->h});
 }
+static MP_DEFINE_CONST_FUN_OBJ_1(py_kptmatch_rect_obj,  py_kptmatch_rect);
 
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_kptmatch_cx_obj,    py_kptmatch_cx);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_kptmatch_cy_obj,    py_kptmatch_cy);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_kptmatch_x_obj,     py_kptmatch_x);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_kptmatch_y_obj,     py_kptmatch_y);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_kptmatch_w_obj,     py_kptmatch_w);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_kptmatch_h_obj,     py_kptmatch_h);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_kptmatch_count_obj, py_kptmatch_count);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_kptmatch_theta_obj, py_kptmatch_theta);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_kptmatch_match_obj, py_kptmatch_match);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_kptmatch_rect_obj,  py_kptmatch_rect);
-
-STATIC const mp_rom_map_elem_t py_kptmatch_locals_dict_table[] = {
+static const mp_rom_map_elem_t py_kptmatch_locals_dict_table[] = {
     { MP_ROM_QSTR(MP_QSTR_cx),      MP_ROM_PTR(&py_kptmatch_cx_obj)      },
     { MP_ROM_QSTR(MP_QSTR_cy),      MP_ROM_PTR(&py_kptmatch_cy_obj)      },
     { MP_ROM_QSTR(MP_QSTR_x),       MP_ROM_PTR(&py_kptmatch_x_obj)       },
@@ -242,15 +283,16 @@ STATIC const mp_rom_map_elem_t py_kptmatch_locals_dict_table[] = {
     { MP_ROM_QSTR(MP_QSTR_rect),    MP_ROM_PTR(&py_kptmatch_rect_obj)    }
 };
 
-STATIC MP_DEFINE_CONST_DICT(py_kptmatch_locals_dict, py_kptmatch_locals_dict_table);
+static MP_DEFINE_CONST_DICT(py_kptmatch_locals_dict, py_kptmatch_locals_dict_table);
 
-static const mp_obj_type_t py_kptmatch_type = {
-    { &mp_type_type },
-    .name   = MP_QSTR_kptmatch,
-    .print  = py_kptmatch_print,
-    .subscr = py_kptmatch_subscr,
-    .locals_dict = (mp_obj_t) &py_kptmatch_locals_dict
-};
+static MP_DEFINE_CONST_OBJ_TYPE(
+    py_kptmatch_type,
+    MP_QSTR_kptmatch,
+    MP_TYPE_FLAG_NONE,
+    print, py_kptmatch_print,
+    subscr, py_kptmatch_subscr,
+    locals_dict, &py_kptmatch_locals_dict
+    );
 
 
 #endif //IMLIB_ENABLE_DESCRIPTOR && IMLIB_ENABLE_FIND_KEYPOINTS
@@ -269,10 +311,9 @@ typedef struct _mp_obj_py_image_it_t {
     size_t cur;
 } mp_obj_py_image_it_t;
 
-void *py_image_cobj(mp_obj_t img_obj)
-{
+void *py_image_cobj(mp_obj_t img_obj) {
     PY_ASSERT_TYPE(img_obj, &py_image_type);
-    return &((py_image_obj_t *)img_obj)->_cobj;
+    return &((py_image_obj_t *) img_obj)->_cobj;
 }
 
 mp_obj_t py_image_unary_op(mp_unary_op_t op, mp_obj_t self_in) {
@@ -294,8 +335,7 @@ mp_obj_t py_image_unary_op(mp_unary_op_t op, mp_obj_t self_in) {
 }
 
 // image iterator
-STATIC mp_obj_t py_image_it_iternext(mp_obj_t self_in)
-{
+static mp_obj_t py_image_it_iternext(mp_obj_t self_in) {
     mp_obj_py_image_it_t *self = MP_OBJ_TO_PTR(self_in);
     py_image_obj_t *image = MP_OBJ_TO_PTR(self->py_image);
     image_t *img = &image->_cobj;
@@ -305,7 +345,7 @@ STATIC mp_obj_t py_image_it_iternext(mp_obj_t self_in)
                 return MP_OBJ_STOP_ITERATION;
             } else {
                 mp_obj_t row = mp_obj_new_list(0, NULL);
-                for (int i=0; i<img->w; i++) {
+                for (int i = 0; i < img->w; i++) {
                     mp_obj_list_append(row, mp_obj_new_int(IMAGE_GET_BINARY_PIXEL(img, i, self->cur)));
                 }
                 self->cur++;
@@ -318,7 +358,7 @@ STATIC mp_obj_t py_image_it_iternext(mp_obj_t self_in)
                 return MP_OBJ_STOP_ITERATION;
             } else {
                 mp_obj_t row = mp_obj_new_list(0, NULL);
-                for (int i=0; i<img->w; i++) {
+                for (int i = 0; i < img->w; i++) {
                     mp_obj_list_append(row, mp_obj_new_int(IMAGE_GET_GRAYSCALE_PIXEL(img, i, self->cur)));
                 }
                 self->cur++;
@@ -331,14 +371,15 @@ STATIC mp_obj_t py_image_it_iternext(mp_obj_t self_in)
                 return MP_OBJ_STOP_ITERATION;
             } else {
                 mp_obj_t row = mp_obj_new_list(0, NULL);
-                for (int i=0; i<img->w; i++) {
+                for (int i = 0; i < img->w; i++) {
                     mp_obj_list_append(row, mp_obj_new_int(IMAGE_GET_RGB565_PIXEL(img, i, self->cur)));
                 }
                 self->cur++;
                 return row;
             }
         }
-        default: { // JPEG/PNG
+        default: {
+            // JPEG/PNG
             if (self->cur >= img->size) {
                 return MP_OBJ_STOP_ITERATION;
             } else {
@@ -348,10 +389,9 @@ STATIC mp_obj_t py_image_it_iternext(mp_obj_t self_in)
     }
 }
 
-STATIC mp_obj_t py_image_getiter(mp_obj_t o_in, mp_obj_iter_buf_t *iter_buf)
-{
+static mp_obj_t py_image_getiter(mp_obj_t o_in, mp_obj_iter_buf_t *iter_buf) {
     assert(sizeof(mp_obj_py_image_it_t) <= sizeof(mp_obj_iter_buf_t));
-    mp_obj_py_image_it_t *o = (mp_obj_py_image_it_t*)iter_buf;
+    mp_obj_py_image_it_t *o = (mp_obj_py_image_it_t *) iter_buf;
     o->base.type = &mp_type_polymorph_iter;
     o->iternext = py_image_it_iternext;
     o->py_image = o_in;
@@ -359,39 +399,39 @@ STATIC mp_obj_t py_image_getiter(mp_obj_t o_in, mp_obj_iter_buf_t *iter_buf)
     return MP_OBJ_FROM_PTR(o);
 }
 
-static void py_image_print(const mp_print_t *print, mp_obj_t self, mp_print_kind_t kind)
-{
+static void py_image_print(const mp_print_t *print, mp_obj_t self, mp_print_kind_t kind) {
     image_t *image = py_image_cobj(self);
     if (image->is_compressed
-            && image->pixels[0] == 0xFE
-            && image->pixels[image->size-1] == 0xFE) {
+        && image->pixels[0] == 0xFE
+        && image->pixels[image->size - 1] == 0xFE) {
         // print for ide.
         print->print_strn(print->data, (const char *) image->pixels, image->size);
     } else {
         mp_printf(print, "{\"w\":%d, \"h\":%d, \"type\":\"%s\", \"size\":%d}",
-                image->w,
-                image->h,
-                (image->pixfmt == PIXFORMAT_BINARY)     ? "binary" :
-                (image->pixfmt == PIXFORMAT_GRAYSCALE)  ? "grayscale" :
-                (image->pixfmt == PIXFORMAT_RGB565)     ? "rgb565" :
-                (image->pixfmt == PIXFORMAT_BAYER_BGGR) ? "bayer_bggr" :
-                (image->pixfmt == PIXFORMAT_BAYER_GBRG) ? "bayer_gbrg" :
-                (image->pixfmt == PIXFORMAT_BAYER_GRBG) ? "bayer_grbg" :
-                (image->pixfmt == PIXFORMAT_BAYER_RGGB) ? "bayer_rggb" :
-                (image->pixfmt == PIXFORMAT_YUV422)     ? "yuv422" :
-                (image->pixfmt == PIXFORMAT_YVU422)     ? "yvu422" :
-                (image->pixfmt == PIXFORMAT_JPEG)       ? "jpeg" :
-                (image->pixfmt == PIXFORMAT_PNG)        ? "png" : "unknown",
-                image_size(image));
+                  image->w,
+                  image->h,
+                  (image->pixfmt == PIXFORMAT_BINARY)     ? "binary" :
+                  (image->pixfmt == PIXFORMAT_GRAYSCALE)  ? "grayscale" :
+                  (image->pixfmt == PIXFORMAT_RGB565)     ? "rgb565" :
+                  (image->pixfmt == PIXFORMAT_BAYER_BGGR) ? "bayer_bggr" :
+                  (image->pixfmt == PIXFORMAT_BAYER_GBRG) ? "bayer_gbrg" :
+                  (image->pixfmt == PIXFORMAT_BAYER_GRBG) ? "bayer_grbg" :
+                  (image->pixfmt == PIXFORMAT_BAYER_RGGB) ? "bayer_rggb" :
+                  (image->pixfmt == PIXFORMAT_YUV422)     ? "yuv422" :
+                  (image->pixfmt == PIXFORMAT_YVU422)     ? "yvu422" :
+                  (image->pixfmt == PIXFORMAT_JPEG)       ? "jpeg" :
+                  (image->pixfmt == PIXFORMAT_PNG)        ? "png" : "unknown",
+                  image_size(image));
     }
 }
 
-static mp_obj_t py_image_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t value)
-{
+static mp_obj_t py_image_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t value) {
     py_image_obj_t *self = self_in;
     image_t *image = py_image_cobj(self);
-    if (value == MP_OBJ_NULL) { // delete
-    } else if (value == MP_OBJ_SENTINEL) { // load
+    if (value == MP_OBJ_NULL) {
+        // delete
+    } else if (value == MP_OBJ_SENTINEL) {
+        // load
         switch (image->pixfmt) {
             case PIXFORMAT_BINARY: {
                 if (MP_OBJ_IS_TYPE(index, &mp_type_slice)) {
@@ -401,7 +441,9 @@ static mp_obj_t py_image_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t value
                     }
                     mp_obj_tuple_t *result = mp_obj_new_tuple(slice.stop - slice.start, NULL);
                     for (mp_uint_t i = 0; i < result->len; i++) {
-                        result->items[i] = mp_obj_new_int(IMAGE_GET_BINARY_PIXEL(image, (slice.start + i) % image->w, (slice.start + i) / image->w));
+                        result->items[i] =
+                            mp_obj_new_int(IMAGE_GET_BINARY_PIXEL(image, (slice.start + i) % image->w,
+                                                                  (slice.start + i) / image->w));
                     }
                     return result;
                 }
@@ -417,7 +459,8 @@ static mp_obj_t py_image_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t value
                     }
                     mp_obj_tuple_t *result = mp_obj_new_tuple(slice.stop - slice.start, NULL);
                     for (mp_uint_t i = 0; i < result->len; i++) {
-                        uint8_t p = IMAGE_GET_GRAYSCALE_PIXEL(image, (slice.start + i) % image->w, (slice.start + i) / image->w);
+                        uint8_t p =
+                            IMAGE_GET_GRAYSCALE_PIXEL(image, (slice.start + i) % image->w, (slice.start + i) / image->w);
                         result->items[i] = mp_obj_new_int(p);
                     }
                     return result;
@@ -477,7 +520,8 @@ static mp_obj_t py_image_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t value
             default:
                 mp_raise_msg(&mp_type_OSError, MP_ERROR_TEXT("Invalid pixel format"));
         }
-    } else { // store
+    } else {
+        // store
         switch (image->pixfmt) {
             case PIXFORMAT_BINARY: {
                 if (MP_OBJ_IS_TYPE(index, &mp_type_slice)) {
@@ -491,7 +535,10 @@ static mp_obj_t py_image_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t value
                         mp_obj_get_array(value, &value_l_len, &value_l);
                         PY_ASSERT_TRUE_MSG(value_l_len == (slice.stop - slice.start), "cannot grow or shrink image");
                         for (mp_uint_t i = 0; i < (slice.stop - slice.start); i++) {
-                            IMAGE_PUT_BINARY_PIXEL(image, (slice.start + i) % image->w, (slice.start + i) / image->w, mp_obj_get_int(value_l[i]));
+                            IMAGE_PUT_BINARY_PIXEL(image,
+                                                   (slice.start + i) % image->w,
+                                                   (slice.start + i) / image->w,
+                                                   mp_obj_get_int(value_l[i]));
                         }
                     } else {
                         mp_int_t v = mp_obj_get_int(value);
@@ -560,7 +607,7 @@ static mp_obj_t py_image_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t value
                                                              mp_obj_get_int(value_2[2]));
                             }
                             IMAGE_PUT_RGB565_PIXEL(image, (slice.start + i) % image->w,
-                                                          (slice.start + i) / image->w, p);
+                                                   (slice.start + i) / image->w, p);
                         }
                     } else {
                         mp_obj_t *value_2;
@@ -577,7 +624,7 @@ static mp_obj_t py_image_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t value
                         }
                         for (mp_uint_t i = 0; i < (slice.stop - slice.start); i++) {
                             IMAGE_PUT_RGB565_PIXEL(image, (slice.start + i) % image->w,
-                                                          (slice.start + i) / image->w, p);
+                                                   (slice.start + i) / image->w, p);
                         }
                     }
                     return mp_const_none;
@@ -585,7 +632,9 @@ static mp_obj_t py_image_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t value
                 mp_uint_t i = mp_get_index(self->base.type, image->w * image->h, index, false);
                 mp_obj_t *value_2;
                 mp_obj_get_array_fixed_n(value, 3, &value_2);
-                uint16_t p = COLOR_R8_G8_B8_TO_RGB565(mp_obj_get_int(value_2[0]), mp_obj_get_int(value_2[1]), mp_obj_get_int(value_2[2]));
+                uint16_t p =
+                    COLOR_R8_G8_B8_TO_RGB565(mp_obj_get_int(value_2[0]), mp_obj_get_int(value_2[1]),
+                                             mp_obj_get_int(value_2[2]));
                 IMAGE_PUT_RGB565_PIXEL(image, i % image->w, i / image->w, p);
                 return mp_const_none;
             }
@@ -623,15 +672,15 @@ static mp_obj_t py_image_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t value
     return MP_OBJ_NULL; // op not supported
 }
 
-static mp_int_t py_image_get_buffer(mp_obj_t self_in, mp_buffer_info_t *bufinfo, mp_uint_t flags)
-{
+static mp_int_t py_image_get_buffer(mp_obj_t self_in, mp_buffer_info_t *bufinfo, mp_uint_t flags) {
     py_image_obj_t *self = self_in;
     if (flags == MP_BUFFER_READ) {
         bufinfo->buf = self->_cobj.data;
         bufinfo->len = image_size(&self->_cobj);
         bufinfo->typecode = 'b';
         return 0;
-    } else { // Can't write to an image!
+    } else {
+        // Can't write to an image!
         bufinfo->buf = NULL;
         bufinfo->len = 0;
         bufinfo->typecode = -1;
@@ -643,20 +692,17 @@ static mp_int_t py_image_get_buffer(mp_obj_t self_in, mp_buffer_info_t *bufinfo,
 // Basic Methods
 ////////////////
 
-static mp_obj_t py_image_width(mp_obj_t img_obj)
-{
+static mp_obj_t py_image_width(mp_obj_t img_obj) {
     return mp_obj_new_int(((image_t *) py_image_cobj(img_obj))->w);
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_image_width_obj, py_image_width);
+static MP_DEFINE_CONST_FUN_OBJ_1(py_image_width_obj, py_image_width);
 
-static mp_obj_t py_image_height(mp_obj_t img_obj)
-{
+static mp_obj_t py_image_height(mp_obj_t img_obj) {
     return mp_obj_new_int(((image_t *) py_image_cobj(img_obj))->h);
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_image_height_obj, py_image_height);
+static MP_DEFINE_CONST_FUN_OBJ_1(py_image_height_obj, py_image_height);
 
-static mp_obj_t py_image_format(mp_obj_t img_obj)
-{
+static mp_obj_t py_image_format(mp_obj_t img_obj) {
     image_t *image = py_image_cobj(img_obj);
     switch (image->pixfmt) {
         case PIXFORMAT_BINARY:
@@ -677,24 +723,160 @@ static mp_obj_t py_image_format(mp_obj_t img_obj)
             return mp_obj_new_int(PIXFORMAT_INVALID);
     }
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_image_format_obj, py_image_format);
+static MP_DEFINE_CONST_FUN_OBJ_1(py_image_format_obj, py_image_format);
 
-static mp_obj_t py_image_size(mp_obj_t img_obj)
-{
+static mp_obj_t py_image_size(mp_obj_t img_obj) {
     return mp_obj_new_int(image_size((image_t *) py_image_cobj(img_obj)));
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_image_size_obj, py_image_size);
+static MP_DEFINE_CONST_FUN_OBJ_1(py_image_size_obj, py_image_size);
 
-static mp_obj_t py_image_bytearray(mp_obj_t img_obj)
-{
+static mp_obj_t py_image_bytearray(mp_obj_t img_obj) {
     image_t *arg_img = (image_t *) py_image_cobj(img_obj);
     return mp_obj_new_bytearray_by_ref(image_size(arg_img), arg_img->data);
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_image_bytearray_obj, py_image_bytearray);
+static MP_DEFINE_CONST_FUN_OBJ_1(py_image_bytearray_obj, py_image_bytearray);
 
-STATIC mp_obj_t py_image_get_pixel(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    image_t *arg_img = py_helper_arg_to_image_not_compressed(args[0]);
+#if defined(MODULE_ULAB_ENABLED) && (ULAB_MAX_DIMS == 4)
+static mp_obj_t py_image_to_ndarray(uint n_args, const mp_obj_t *pos_args, mp_map_t *kw_args) {
+    enum { ARG_dtype, ARG_buffer };
+    static const mp_arg_t allowed_args[] = {
+        { MP_QSTR_dtype, MP_ARG_OBJ | MP_ARG_REQUIRED, {.u_rom_obj = MP_ROM_NONE } },
+        { MP_QSTR_buffer, MP_ARG_OBJ | MP_ARG_KW_ONLY, {.u_rom_obj = MP_ROM_NONE} },
+    };
+
+    image_t *image = py_helper_arg_to_image(pos_args[0], ARG_IMAGE_ANY);
+    mp_arg_val_t args[MP_ARRAY_SIZE(allowed_args)];
+    mp_arg_parse_all(n_args - 1, pos_args + 1, kw_args, MP_ARRAY_SIZE(allowed_args), allowed_args, args);
+
+    int len = image->w * image->h;
+
+    int dtype_code;
+    int dtype_size;
+
+    if (mp_obj_is_integer(args[ARG_dtype].u_obj)) {
+        dtype_code = mp_obj_get_int(args[ARG_dtype].u_obj);
+    } else {
+        // The first character is either 0 or the typecode.
+        dtype_code = mp_obj_str_get_str(args[ARG_dtype].u_obj)[0];
+    }
+
+    switch (dtype_code) {
+        case 'b':
+        case 'B': {
+            dtype_size = 1;
+            break;
+        }
+        case 'f': {
+            dtype_size = 4;
+            break;
+        }
+        default: {
+            mp_raise_ValueError(MP_ERROR_TEXT("Unsupported dtype"));
+            break;
+        }
+    }
+
+    size_t shape[ULAB_MAX_DIMS];
+    size_t strides[ULAB_MAX_DIMS];
+    int channels;
+    int ndim;
+
+    switch (image->pixfmt) {
+        case PIXFORMAT_GRAYSCALE: {
+            memcpy(shape, (size_t []) {0, 0, image->h, image->w}, sizeof(shape));
+            memcpy(strides, (size_t []) {0, 0, image->w * dtype_size, dtype_size}, sizeof(strides));
+            channels = 1;
+            ndim = 2;
+            break;
+        }
+        case PIXFORMAT_RGB565: {
+            memcpy(shape, (size_t []) {0, image->h, image->w, 3}, sizeof(shape));
+            memcpy(strides, (size_t []) {0, image->w * dtype_size * 3, dtype_size * 3, dtype_size}, sizeof(strides));
+            channels = 3;
+            ndim = 3;
+            break;
+        }
+        default: {
+            mp_raise_ValueError(MP_ERROR_TEXT("Unsupported pixformat"));
+            break;
+        }
+    }
+
+    ndarray_obj_t *ndarray;
+
+    if (args[ARG_buffer].u_obj != mp_const_none) {
+        mp_buffer_info_t bufinfo = {0};
+        mp_get_buffer_raise(args[ARG_buffer].u_obj, &bufinfo, MP_BUFFER_WRITE);
+
+        if ((len * dtype_size * channels) > bufinfo.len) {
+            mp_raise_ValueError(MP_ERROR_TEXT("Buffer is too small"));
+        }
+
+        ndarray = m_new_obj(ndarray_obj_t);
+        ndarray->base.type = &ulab_ndarray_type;
+        ndarray->dtype = dtype_code;
+        ndarray->boolean = NDARRAY_NUMERIC;
+        ndarray->ndim = ndim;
+        ndarray->len = len * channels;
+        ndarray->itemsize = dtype_size;
+        memcpy(ndarray->shape, shape, sizeof(shape));
+        memcpy(ndarray->strides, strides, sizeof(strides));
+        ndarray->array = bufinfo.buf;
+        ndarray->origin = bufinfo.buf;
+    } else {
+        ndarray = ndarray_new_dense_ndarray(ndim, shape, dtype_code);
+    }
+
+    int shift = (dtype_code == 'b') ? 0x80808080 : 0x00000000;
+
+    if (image->pixfmt == PIXFORMAT_GRAYSCALE) {
+        uint8_t *input_u8 = (uint8_t *) image->data;
+        if (dtype_code == 'f') {
+            float *output_f32 = (float *) ndarray->array;
+            for (int i = 0; i < len; i++) {
+                output_f32[i] = input_u8[i];
+            }
+        } else {
+            uint8_t *output_u8 = (uint8_t *) ndarray->array;
+
+            int i = 0;
+
+            for (; i < (len - 3); i += 4) {
+                *((uint32_t *) (output_u8 + i)) = *((uint32_t *) (input_u8 + i)) ^ shift;
+            }
+
+            for (; i < len; i++) {
+                output_u8[i] = input_u8[i] ^ shift;
+            }
+        }
+    } else {
+        uint16_t *input_u16 = (uint16_t *) image->data;
+        if (dtype_code == 'f') {
+            float *output_f32 = (float *) ndarray->array;
+            for (int i = 0, j = 0; i < len; i++, j += 3) {
+                int pixel = input_u16[i];
+                output_f32[j + 0] = COLOR_RGB565_TO_R8(pixel);
+                output_f32[j + 1] = COLOR_RGB565_TO_G8(pixel);
+                output_f32[j + 2] = COLOR_RGB565_TO_B8(pixel);
+            }
+        } else {
+            uint8_t *output_u8 = (uint8_t *) ndarray->array;
+            for (int i = 0, j = 0; i < len; i++, j += 3) {
+                int pixel = input_u16[i];
+                output_u8[j + 0] = COLOR_RGB565_TO_R8(pixel) ^ shift;
+                output_u8[j + 1] = COLOR_RGB565_TO_G8(pixel) ^ shift;
+                output_u8[j + 2] = COLOR_RGB565_TO_B8(pixel) ^ shift;
+            }
+        }
+    }
+
+    return MP_OBJ_FROM_PTR(ndarray);
+}
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_to_ndarray_obj, 1, py_image_to_ndarray);
+#endif
+
+static mp_obj_t py_image_get_pixel(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
+    image_t *arg_img = py_helper_arg_to_image(args[0], ARG_IMAGE_UNCOMPRESSED);
 
     const mp_obj_t *arg_vec;
     uint offset = py_helper_consume_array(n_args, args, 1, 2, &arg_vec);
@@ -702,7 +884,7 @@ STATIC mp_obj_t py_image_get_pixel(uint n_args, const mp_obj_t *args, mp_map_t *
     int arg_y = mp_obj_get_int(arg_vec[1]);
 
     bool arg_rgbtuple = py_helper_keyword_int(n_args, args, offset, kw_args,
-            MP_OBJ_NEW_QSTR(MP_QSTR_rgbtuple), arg_img->pixfmt == PIXFORMAT_RGB565);
+                                              MP_OBJ_NEW_QSTR(MP_QSTR_rgbtuple), arg_img->pixfmt == PIXFORMAT_RGB565);
 
     if ((!IM_X_INSIDE(arg_img, arg_x)) || (!IM_Y_INSIDE(arg_img, arg_y))) {
         return mp_const_none;
@@ -770,11 +952,10 @@ STATIC mp_obj_t py_image_get_pixel(uint n_args, const mp_obj_t *args, mp_map_t *
         default: return mp_const_none;
     }
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_get_pixel_obj, 2, py_image_get_pixel);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_get_pixel_obj, 2, py_image_get_pixel);
 
-STATIC mp_obj_t py_image_set_pixel(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    image_t *arg_img = py_helper_arg_to_image_not_compressed(args[0]);
+static mp_obj_t py_image_set_pixel(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
+    image_t *arg_img = py_helper_arg_to_image(args[0], ARG_IMAGE_UNCOMPRESSED);
 
     const mp_obj_t *arg_vec;
     uint offset = py_helper_consume_array(n_args, args, 1, 2, &arg_vec);
@@ -794,328 +975,138 @@ STATIC mp_obj_t py_image_set_pixel(uint n_args, const mp_obj_t *args, mp_map_t *
             return args[0];
         }
         case PIXFORMAT_GRAYSCALE:
-        case PIXFORMAT_BAYER_ANY: { // re-use
+        case PIXFORMAT_BAYER_ANY: {
+            // re-use
             IMAGE_PUT_GRAYSCALE_PIXEL(arg_img, arg_x, arg_y, arg_c);
             return args[0];
         }
         case PIXFORMAT_RGB565:
-        case PIXFORMAT_YUV_ANY: { // re-use
+        case PIXFORMAT_YUV_ANY: {
+            // re-use
             IMAGE_PUT_RGB565_PIXEL(arg_img, arg_x, arg_y, arg_c);
             return args[0];
         }
         default: return args[0];
     }
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_set_pixel_obj, 2, py_image_set_pixel);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_set_pixel_obj, 2, py_image_set_pixel);
 
-#ifdef IMLIB_ENABLE_MEAN_POOLING
-static mp_obj_t py_image_mean_pool(mp_obj_t img_obj, mp_obj_t x_div_obj, mp_obj_t y_div_obj)
-{
-    image_t *arg_img = py_helper_arg_to_image_mutable(img_obj);
+static mp_obj_t py_image_to(pixformat_t pixfmt, mp_rom_obj_t default_color_palette, bool default_copy,
+                            uint n_args, const mp_obj_t *pos_args, mp_map_t *kw_args) {
+    enum {
+        ARG_x_scale, ARG_y_scale, ARG_roi, ARG_channel, ARG_alpha, ARG_color_palette, ARG_alpha_palette, ARG_hint,
+        ARG_copy, ARG_copy_to_fb, ARG_quality, ARG_encode_for_ide, ARG_subsampling
+    };
+    const mp_arg_t allowed_args[] = {
+        { MP_QSTR_x_scale, MP_ARG_OBJ | MP_ARG_KW_ONLY, {.u_rom_obj = MP_ROM_NONE} },
+        { MP_QSTR_y_scale, MP_ARG_OBJ | MP_ARG_KW_ONLY, {.u_rom_obj = MP_ROM_NONE} },
+        { MP_QSTR_roi, MP_ARG_OBJ | MP_ARG_KW_ONLY, {.u_rom_obj = MP_ROM_NONE} },
+        { MP_QSTR_rgb_channel, MP_ARG_INT | MP_ARG_KW_ONLY,  {.u_int = -1 } },
+        { MP_QSTR_alpha, MP_ARG_INT | MP_ARG_KW_ONLY,  {.u_int = 255 } },
+        { MP_QSTR_color_palette, MP_ARG_OBJ | MP_ARG_KW_ONLY, {.u_rom_obj = default_color_palette} },
+        { MP_QSTR_alpha_palette, MP_ARG_OBJ | MP_ARG_KW_ONLY, {.u_rom_obj = MP_ROM_NONE} },
+        { MP_QSTR_hint, MP_ARG_INT | MP_ARG_KW_ONLY,  {.u_int = 0 } },
+        { MP_QSTR_copy, MP_ARG_BOOL | MP_ARG_KW_ONLY, {.u_bool = default_copy} },
+        { MP_QSTR_copy_to_fb, MP_ARG_BOOL | MP_ARG_KW_ONLY, {.u_bool = false} },
+        { MP_QSTR_quality, MP_ARG_INT | MP_ARG_KW_ONLY, {.u_int = 90} },
+        { MP_QSTR_encode_for_ide, MP_ARG_BOOL | MP_ARG_KW_ONLY,  {.u_bool = false} },
+        { MP_QSTR_subsampling, MP_ARG_INT | MP_ARG_KW_ONLY,  {.u_int = JPEG_SUBSAMPLING_AUTO} },
+    };
 
-    int arg_x_div = mp_obj_get_int(x_div_obj);
-    PY_ASSERT_TRUE_MSG(arg_x_div >= 1, "Width divisor must be greater than >= 1");
-    PY_ASSERT_TRUE_MSG(arg_x_div <= arg_img->w, "Width divisor must be less than <= img width");
-    int arg_y_div = mp_obj_get_int(y_div_obj);
-    PY_ASSERT_TRUE_MSG(arg_y_div >= 1, "Height divisor must be greater than >= 1");
-    PY_ASSERT_TRUE_MSG(arg_y_div <= arg_img->h, "Height divisor must be less than <= img height");
+    // Parse args.
+    image_t *src_img = py_image_cobj(pos_args[0]);
+    mp_arg_val_t args[MP_ARRAY_SIZE(allowed_args)];
+    mp_arg_parse_all(n_args - 1, pos_args + 1, kw_args, MP_ARRAY_SIZE(allowed_args), allowed_args, args);
 
-    image_t out_img;
-    out_img.w = arg_img->w / arg_x_div;
-    out_img.h = arg_img->h / arg_y_div;
-    out_img.pixfmt = arg_img->pixfmt;
-    out_img.pixels = arg_img->pixels;
-    PY_ASSERT_TRUE_MSG(image_size(&out_img) <= image_size(arg_img), "Can't pool in place!");
+    rectangle_t roi = py_helper_arg_to_roi(args[ARG_roi].u_obj, src_img);
 
-    imlib_mean_pool(arg_img, &out_img, arg_x_div, arg_y_div);
-    arg_img->w = out_img.w;
-    arg_img->h = out_img.h;
-    py_helper_update_framebuffer(arg_img);
-    return img_obj;
-}
-STATIC MP_DEFINE_CONST_FUN_OBJ_3(py_image_mean_pool_obj, py_image_mean_pool);
-
-static mp_obj_t py_image_mean_pooled(mp_obj_t img_obj, mp_obj_t x_div_obj, mp_obj_t y_div_obj)
-{
-    image_t *arg_img = py_helper_arg_to_image_mutable(img_obj);
-
-    int arg_x_div = mp_obj_get_int(x_div_obj);
-    PY_ASSERT_TRUE_MSG(arg_x_div >= 1, "Width divisor must be greater than >= 1");
-    PY_ASSERT_TRUE_MSG(arg_x_div <= arg_img->w, "Width divisor must be less than <= img width");
-    int arg_y_div = mp_obj_get_int(y_div_obj);
-    PY_ASSERT_TRUE_MSG(arg_y_div >= 1, "Height divisor must be greater than >= 1");
-    PY_ASSERT_TRUE_MSG(arg_y_div <= arg_img->h, "Height divisor must be less than <= img height");
-
-    image_t out_img;
-    out_img.w = arg_img->w / arg_x_div;
-    out_img.h = arg_img->h / arg_y_div;
-    out_img.pixfmt = arg_img->pixfmt;
-    out_img.pixels = xalloc(image_size(&out_img));
-
-    imlib_mean_pool(arg_img, &out_img, arg_x_div, arg_y_div);
-    return py_image_from_struct(&out_img);
-}
-STATIC MP_DEFINE_CONST_FUN_OBJ_3(py_image_mean_pooled_obj, py_image_mean_pooled);
-#endif // IMLIB_ENABLE_MEAN_POOLING
-
-#ifdef IMLIB_ENABLE_MIDPOINT_POOLING
-static mp_obj_t py_image_midpoint_pool(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    image_t *arg_img = py_helper_arg_to_image_mutable(args[0]);
-
-    int arg_x_div = mp_obj_get_int(args[1]);
-    PY_ASSERT_TRUE_MSG(arg_x_div >= 1, "Width divisor must be greater than >= 1");
-    PY_ASSERT_TRUE_MSG(arg_x_div <= arg_img->w, "Width divisor must be less than <= img width");
-    int arg_y_div = mp_obj_get_int(args[2]);
-    PY_ASSERT_TRUE_MSG(arg_y_div >= 1, "Height divisor must be greater than >= 1");
-    PY_ASSERT_TRUE_MSG(arg_y_div <= arg_img->h, "Height divisor must be less than <= img height");
-
-    int arg_bias = py_helper_keyword_float(n_args, args, 3, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_bias), 0.5) * 256;
-    PY_ASSERT_TRUE_MSG((0 <= arg_bias) && (arg_bias <= 256), "Error: 0 <= bias <= 1!");
-
-    image_t out_img;
-    out_img.w = arg_img->w / arg_x_div;
-    out_img.h = arg_img->h / arg_y_div;
-    out_img.pixfmt = arg_img->pixfmt;
-    out_img.pixels = arg_img->pixels;
-    PY_ASSERT_TRUE_MSG(image_size(&out_img) <= image_size(arg_img), "Can't pool in place!");
-
-    imlib_midpoint_pool(arg_img, &out_img, arg_x_div, arg_y_div, arg_bias);
-    arg_img->w = out_img.w;
-    arg_img->h = out_img.h;
-    py_helper_update_framebuffer(arg_img);
-    return args[0];
-}
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_midpoint_pool_obj, 3, py_image_midpoint_pool);
-
-static mp_obj_t py_image_midpoint_pooled(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    image_t *arg_img = py_helper_arg_to_image_mutable(args[0]);
-
-    int arg_x_div = mp_obj_get_int(args[1]);
-    PY_ASSERT_TRUE_MSG(arg_x_div >= 1, "Width divisor must be greater than >= 1");
-    PY_ASSERT_TRUE_MSG(arg_x_div <= arg_img->w, "Width divisor must be less than <= img width");
-    int arg_y_div = mp_obj_get_int(args[2]);
-    PY_ASSERT_TRUE_MSG(arg_y_div >= 1, "Height divisor must be greater than >= 1");
-    PY_ASSERT_TRUE_MSG(arg_y_div <= arg_img->h, "Height divisor must be less than <= img height");
-
-    int arg_bias = py_helper_keyword_float(n_args, args, 3, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_bias), 0.5) * 256;
-    PY_ASSERT_TRUE_MSG((0 <= arg_bias) && (arg_bias <= 256), "Error: 0 <= bias <= 1!");
-
-    image_t out_img;
-    out_img.w = arg_img->w / arg_x_div;
-    out_img.h = arg_img->h / arg_y_div;
-    out_img.pixfmt = arg_img->pixfmt;
-    out_img.pixels = xalloc(image_size(&out_img));
-
-    imlib_midpoint_pool(arg_img, &out_img, arg_x_div, arg_y_div, arg_bias);
-    return py_image_from_struct(&out_img);
-}
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_midpoint_pooled_obj, 3, py_image_midpoint_pooled);
-#endif // IMLIB_ENABLE_MIDPOINT_POOLING
-
-static mp_obj_t py_image_to(pixformat_t pixfmt, const uint16_t *default_color_palette, bool copy_to_fb,
-                            mp_obj_t copy_default, bool quality_is_first_arg, bool encode_for_ide_default,
-                            uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    image_t *src_img = py_image_cobj(args[0]);
-
-    int quality_default = 90;
-    if (quality_is_first_arg && (n_args > 1)) {
-        quality_default = mp_obj_get_int(args[1]);
-        n_args -= 1;
-        args += 1;
+    if (args[ARG_channel].u_int < -1 || args[ARG_channel].u_int > 2) {
+        mp_raise_msg(&mp_type_ValueError, MP_ERROR_TEXT("RGB channel can be 0, 1, or 2"));
     }
 
-    float arg_x_scale = 1.f;
-    bool got_x_scale = py_helper_keyword_float_maybe(n_args, args, 1, kw_args,
-                                                     MP_OBJ_NEW_QSTR(MP_QSTR_x_scale), &arg_x_scale);
-
-    float arg_y_scale = 1.f;
-    bool got_y_scale = py_helper_keyword_float_maybe(n_args, args, 2, kw_args,
-                                                     MP_OBJ_NEW_QSTR(MP_QSTR_y_scale), &arg_y_scale);
-
-    rectangle_t arg_roi;
-    py_helper_keyword_rectangle_roi(src_img, n_args, args, 3, kw_args, &arg_roi);
-
-    int arg_rgb_channel = py_helper_keyword_int(n_args, args, 4, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_rgb_channel), -1);
-    if ((arg_rgb_channel < -1) || (2 < arg_rgb_channel)) {
-        mp_raise_msg(&mp_type_ValueError, MP_ERROR_TEXT("-1 <= rgb_channel <= 2!"));
+    if (args[ARG_alpha].u_int < 0 || args[ARG_alpha].u_int > 255) {
+        mp_raise_msg(&mp_type_ValueError, MP_ERROR_TEXT("Alpha ranges between 0 and 255"));
     }
 
-    int arg_alpha = py_helper_keyword_int(n_args, args, 5, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_alpha), 256);
-    if ((arg_alpha < 0) || (256 < arg_alpha)) {
-        mp_raise_msg(&mp_type_ValueError, MP_ERROR_TEXT("0 <= alpha <= 256!"));
+    if (args[ARG_quality].u_int < 1 || args[ARG_quality].u_int > 100) {
+        mp_raise_msg(&mp_type_ValueError, MP_ERROR_TEXT("Quality ranges between 0 and 100"));
     }
 
-    const uint16_t *color_palette = py_helper_keyword_color_palette(n_args, args, 6, kw_args, default_color_palette);
-    const uint8_t *alpha_palette = py_helper_keyword_alpha_palette(n_args, args, 7, kw_args, NULL);
+    float x_scale = 1.0f;
+    float y_scale = 1.0f;
+    py_helper_arg_to_scale(args[ARG_x_scale].u_obj, args[ARG_y_scale].u_obj, &x_scale, &y_scale);
 
-    image_hint_t hint = py_helper_keyword_int(n_args, args, 8, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_hint), 0);
+    const uint16_t *color_palette = py_helper_arg_to_palette(args[ARG_color_palette].u_obj, PIXFORMAT_RGB565);
+    const uint8_t *alpha_palette = py_helper_arg_to_palette(args[ARG_alpha_palette].u_obj, PIXFORMAT_GRAYSCALE);
 
-    int arg_x_size;
-    bool got_x_size = py_helper_keyword_int_maybe(n_args, args, 9, kw_args,
-                                                  MP_OBJ_NEW_QSTR(MP_QSTR_x_size), &arg_x_size);
+    args[ARG_hint].u_int = (args[ARG_hint].u_int & ~(IMAGE_HINT_CENTER |
+                                                     IMAGE_HINT_SCALE_ASPECT_KEEP |
+                                                     IMAGE_HINT_SCALE_ASPECT_EXPAND |
+                                                     IMAGE_HINT_SCALE_ASPECT_IGNORE)) | IMAGE_HINT_BLACK_BACKGROUND;
 
-    int arg_y_size;
-    bool got_y_size = py_helper_keyword_int_maybe(n_args, args, 10, kw_args,
-                                                  MP_OBJ_NEW_QSTR(MP_QSTR_y_size), &arg_y_size);
-
-    if (got_x_scale && got_x_size) {
-        mp_raise_msg(&mp_type_ValueError, MP_ERROR_TEXT("Choose either x_scale or x_size not both!"));
-    }
-
-    if (got_y_scale && got_y_size) {
-        mp_raise_msg(&mp_type_ValueError, MP_ERROR_TEXT("Choose either y_scale or y_size not both!"));
-    }
-
-    if (got_x_size) {
-        arg_x_scale = arg_x_size / ((float) arg_roi.w);
-    }
-
-    if (got_y_size) {
-        arg_y_scale = arg_y_size / ((float) arg_roi.h);
-    }
-
-    if ((!got_x_scale) && (!got_x_size) && got_y_size) {
-        arg_x_scale = arg_y_scale;
-    }
-
-    if ((!got_y_scale) && (!got_y_size) && got_x_size) {
-        arg_y_scale = arg_x_scale;
-    }
-
-    mp_obj_t copy_obj = py_helper_keyword_object(n_args, args, 11, kw_args,
-            MP_OBJ_NEW_QSTR(copy_to_fb ? MP_QSTR_copy_to_fb : MP_QSTR_copy), copy_default);
-    bool copy = false;
-    image_t *arg_other = copy_to_fb ? NULL : src_img;
-
-    int arg_q = py_helper_keyword_int(n_args, args, 12, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_quality), quality_default);
-    if ((arg_q < 1) || (100 < arg_q)) {
-        mp_raise_msg(&mp_type_ValueError, MP_ERROR_TEXT("1 <= quality <= 100!"));
-    }
-
-    bool arg_e = py_helper_keyword_int(n_args, args, 13, kw_args,
-                                       MP_OBJ_NEW_QSTR(MP_QSTR_encode_for_ide), encode_for_ide_default);
-
-    if (copy_obj) {
-        if (mp_obj_is_integer(copy_obj)) {
-            copy = mp_obj_get_int(copy_obj);
-            if (copy) {
-                arg_other = NULL;
-            }
-        } else {
-            arg_other = py_image_cobj(copy_obj);
-        }
-    }
-
-    if (copy_to_fb && copy) {
+    if (args[ARG_copy_to_fb].u_bool) {
         framebuffer_update_jpeg_buffer();
     }
 
     image_t dst_img = {
-        .w      = fast_floorf(arg_roi.w * arg_x_scale),
-        .h      = fast_floorf(arg_roi.h * arg_y_scale),
+        .w = fast_floorf(roi.w * x_scale),
+        .h = fast_floorf(roi.h * y_scale),
         .pixfmt = (pixfmt == PIXFORMAT_INVALID) ? src_img->pixfmt : pixfmt,
-        .size   = src_img->size,
+        .size = src_img->size,
         .pixels = NULL,
     };
 
+    bool transposed = false;
+    if (args[ARG_hint].u_int & IMAGE_HINT_TRANSPOSE) {
+        int temp = dst_img.w;
+        dst_img.w = dst_img.h;
+        dst_img.h = temp;
+        transposed = true;
+    }
+
     image_t dst_img_tmp = dst_img;
 
+    if ((dst_img.is_bayer || dst_img.is_yuv) &&
+        (((x_scale != 1.0f) && (x_scale != -1.0f)) ||
+         ((y_scale != 1.0f) && (y_scale != -1.0f)) ||
+         (args[ARG_channel].u_int != -1) ||
+         (args[ARG_alpha].u_int != 255) ||
+         (color_palette != NULL) || (alpha_palette != NULL))) {
+        mp_raise_msg(&mp_type_ValueError, MP_ERROR_TEXT("Only copying/cropping is supported for Bayer/YUV!"));
+    }
+
     if (dst_img.is_bayer) {
-        if (((arg_x_scale != 1) && (arg_x_scale != -1)) ||
-            ((arg_y_scale != 1) && (arg_y_scale != -1)) ||
-            (arg_rgb_channel != -1) ||
-            (arg_alpha != 256) ||
-            (color_palette != NULL) ||
-            (alpha_palette != NULL)) {
-            mp_raise_msg(&mp_type_ValueError, MP_ERROR_TEXT("Only bayer copying/cropping is supported!"));
-        } else {
-            bool shift_right = arg_roi.x % 2;
-            bool shift_down = arg_roi.y % 2;
-            switch (dst_img.pixfmt) {
-                case PIXFORMAT_BAYER_BGGR: {
-                    if (shift_right && shift_down) {
-                        dst_img.pixfmt = PIXFORMAT_BAYER_RGGB;
-                    } else if (shift_right) {
-                        dst_img.pixfmt = PIXFORMAT_BAYER_GBRG;
-                    } else if (shift_down) {
-                        dst_img.pixfmt = PIXFORMAT_BAYER_GRBG;
-                    }
-                    break;
-                }
-                case PIXFORMAT_BAYER_GBRG: {
-                    if (shift_right && shift_down) {
-                        dst_img.pixfmt = PIXFORMAT_BAYER_GRBG;
-                    } else if (shift_right) {
-                        dst_img.pixfmt = PIXFORMAT_BAYER_BGGR;
-                    } else if (shift_down) {
-                        dst_img.pixfmt = PIXFORMAT_BAYER_RGGB;
-                    }
-                    break;
-                }
-                case PIXFORMAT_BAYER_GRBG: {
-                    if (shift_right && shift_down) {
-                        dst_img.pixfmt = PIXFORMAT_BAYER_GBRG;
-                    } else if (shift_right) {
-                        dst_img.pixfmt = PIXFORMAT_BAYER_RGGB;
-                    } else if (shift_down) {
-                        dst_img.pixfmt = PIXFORMAT_BAYER_BGGR;
-                    }
-                    break;
-                }
-                case PIXFORMAT_BAYER_RGGB: {
-                    if (shift_right && shift_down) {
-                        dst_img.pixfmt = PIXFORMAT_BAYER_BGGR;
-                    } else if (shift_right) {
-                        dst_img.pixfmt = PIXFORMAT_BAYER_GRBG;
-                    } else if (shift_down) {
-                        dst_img.pixfmt = PIXFORMAT_BAYER_GBRG;
-                    }
-                    break;
-                }
-                default: {
-                    break;
-                }
-            }
-            hint &= ~(IMAGE_HINT_AREA |
-                      IMAGE_HINT_BICUBIC |
-                      IMAGE_HINT_BILINEAR |
-                      IMAGE_HINT_EXTRACT_RGB_CHANNEL_FIRST |
-                      IMAGE_HINT_APPLY_COLOR_PALETTE_FIRST);
-        }
+        dst_img.pixfmt = imlib_bayer_shift(dst_img.pixfmt, roi.x, roi.y, transposed);
+        args[ARG_hint].u_int &= ~(IMAGE_HINT_AREA |
+                                  IMAGE_HINT_BICUBIC |
+                                  IMAGE_HINT_BILINEAR |
+                                  IMAGE_HINT_EXTRACT_RGB_CHANNEL_FIRST |
+                                  IMAGE_HINT_APPLY_COLOR_PALETTE_FIRST);
     } else if (dst_img.is_yuv) {
-        if (((arg_x_scale != 1) && (arg_x_scale != -1)) ||
-            ((arg_y_scale != 1) && (arg_y_scale != -1)) ||
-            (arg_rgb_channel != -1) ||
-            (arg_alpha != 256) ||
-            (color_palette != NULL) ||
-            (alpha_palette != NULL)) {
-            mp_raise_msg(&mp_type_ValueError, MP_ERROR_TEXT("Only YUV422 copying/cropping is supported!"));
+        if (transposed) {
+            mp_raise_msg(&mp_type_ValueError, MP_ERROR_TEXT("YUV422 images cannot be tranposed/rotated!"));
         } else {
-            if (arg_roi.x % 2) {
-                dst_img.pixfmt = (dst_img.pixfmt == PIXFORMAT_YUV422) ? PIXFORMAT_YVU422 : PIXFORMAT_YUV422;
-            }
-            hint &= ~(IMAGE_HINT_AREA |
-                      IMAGE_HINT_BICUBIC |
-                      IMAGE_HINT_BILINEAR |
-                      IMAGE_HINT_EXTRACT_RGB_CHANNEL_FIRST |
-                      IMAGE_HINT_APPLY_COLOR_PALETTE_FIRST);
+            dst_img.pixfmt = imlib_yuv_shift(dst_img.pixfmt, roi.x);
+            args[ARG_hint].u_int &= ~(IMAGE_HINT_AREA |
+                                      IMAGE_HINT_BICUBIC |
+                                      IMAGE_HINT_BILINEAR |
+                                      IMAGE_HINT_EXTRACT_RGB_CHANNEL_FIRST |
+                                      IMAGE_HINT_APPLY_COLOR_PALETTE_FIRST);
         }
     } else if (dst_img.is_compressed) {
         fb_alloc_mark();
 
-        bool simple = (arg_x_scale == 1) &&
-                      (arg_y_scale == 1) &&
-                      (arg_roi.x == 0) &&
-                      (arg_roi.y == 0) &&
-                      (arg_roi.w == src_img->w) &&
-                      (arg_roi.h == src_img->h) &&
-                      (arg_rgb_channel == -1) &&
-                      (arg_alpha == 256) &&
+        bool simple = (x_scale == 1.0f) &&
+                      (y_scale == 1.0f) &&
+                      (roi.x == 0) &&
+                      (roi.y == 0) &&
+                      (roi.w == src_img->w) &&
+                      (roi.h == src_img->h) &&
+                      (args[ARG_channel].u_int == -1) &&
+                      (args[ARG_alpha].u_int == 255) &&
                       (color_palette == NULL) &&
-                      (alpha_palette == NULL);
+                      (alpha_palette == NULL) &&
+                      (!transposed);
 
         if ((dst_img.pixfmt != src_img->pixfmt) || (!simple)) {
             image_t temp;
@@ -1124,26 +1115,27 @@ static mp_obj_t py_image_to(pixformat_t pixfmt, const uint16_t *default_color_pa
             if (src_img->is_compressed || (!simple)) {
                 temp.w = dst_img.w;
                 temp.h = dst_img.h;
-                temp.pixfmt = PIXFORMAT_RGB565; // TODO PIXFORMAT_ARGB8888
+                temp.pixfmt = src_img->is_color ? PIXFORMAT_RGB565 : PIXFORMAT_GRAYSCALE;
                 temp.size = 0;
                 temp.data = fb_alloc(image_size(&temp), FB_ALLOC_NO_HINT);
-                imlib_draw_image(&temp, src_img, 0, 0, arg_x_scale, arg_y_scale, &arg_roi,
-                                arg_rgb_channel, arg_alpha, color_palette, alpha_palette,
-                                (hint & (~IMAGE_HINT_CENTER)) | IMAGE_HINT_BLACK_BACKGROUND, NULL, NULL);
+                imlib_draw_image(&temp, src_img, 0, 0, x_scale, y_scale, &roi,
+                                 args[ARG_channel].u_int, args[ARG_alpha].u_int, color_palette, alpha_palette,
+                                 args[ARG_hint].u_int, NULL, NULL, NULL);
             }
 
-            if (((dst_img.pixfmt == PIXFORMAT_JPEG) && jpeg_compress(&temp, &dst_img_tmp, arg_q, false))
-            || ((dst_img.pixfmt == PIXFORMAT_PNG) && png_compress(&temp, &dst_img_tmp))) {
+            if (((dst_img.pixfmt == PIXFORMAT_JPEG) &&
+                 jpeg_compress(&temp, &dst_img_tmp, args[ARG_quality].u_int, false, args[ARG_subsampling].u_int))
+                || ((dst_img.pixfmt == PIXFORMAT_PNG) && png_compress(&temp, &dst_img_tmp))) {
                 mp_raise_msg(&mp_type_OSError, MP_ERROR_TEXT("Compression Failed!"));
             }
-        } else if (arg_e) {
+        } else if (args[ARG_encode_for_ide].u_bool) {
             dst_img_tmp.data = fb_alloc(image_size(&dst_img_tmp), FB_ALLOC_NO_HINT);
             memcpy(dst_img_tmp.data, src_img->data, dst_img_tmp.size);
         } else {
             dst_img_tmp.data = src_img->data;
         }
 
-        if (arg_e) {
+        if (args[ARG_encode_for_ide].u_bool) {
             dst_img.size = fb_encode_for_ide_new_size(&dst_img_tmp);
         } else {
             dst_img.size = dst_img_tmp.size;
@@ -1152,26 +1144,22 @@ static mp_obj_t py_image_to(pixformat_t pixfmt, const uint16_t *default_color_pa
 
     uint32_t size = image_size(&dst_img);
 
-    if (copy) {
-        if (copy_to_fb) {
-            py_helper_set_to_framebuffer(&dst_img);
-        } else {
-            dst_img.data = xalloc(size);
-        }
-    } else if (arg_other) {
-        bool fb = py_helper_is_equal_to_framebuffer(arg_other);
-        size_t buf_size = fb ? framebuffer_get_buffer_size() : image_size(arg_other);
-        PY_ASSERT_TRUE_MSG((size <= buf_size),
-                "The new image won't fit in the target frame buffer!");
-        // DO NOT MODIFY arg_other YET (as it could point to src_img)!
-        dst_img.data = arg_other->data;
-        py_helper_update_framebuffer(&dst_img);
+    if (args[ARG_copy_to_fb].u_bool) {
+        // Convert to FB.
+        py_helper_set_to_framebuffer(&dst_img);
+    } else if (args[ARG_copy].u_bool) {
+        // Create dynamic copy.
+        image_xalloc(&dst_img, size);
     } else {
-        dst_img.data = xalloc(size);
+        // Convert in place.
+        bool fb = py_helper_is_equal_to_framebuffer(src_img);
+        size_t buf_size = fb ? framebuffer_get_buffer_size() : image_size(src_img);
+        PY_ASSERT_TRUE_MSG((size <= buf_size), "The image doesn't fit in the frame buffer!");
+        dst_img.data = src_img->data;
     }
 
     if (dst_img.is_compressed) {
-        if (arg_e) {
+        if (args[ARG_encode_for_ide].u_bool) {
             fb_encode_for_ide(dst_img.data, &dst_img_tmp);
         } else if (dst_img.data != dst_img_tmp.data) {
             memcpy(dst_img.data, dst_img_tmp.data, dst_img.size);
@@ -1179,100 +1167,86 @@ static mp_obj_t py_image_to(pixformat_t pixfmt, const uint16_t *default_color_pa
         fb_alloc_free_till_mark();
     } else {
         fb_alloc_mark();
-        imlib_draw_image(&dst_img, src_img, 0, 0, arg_x_scale, arg_y_scale, &arg_roi,
-                        arg_rgb_channel, arg_alpha, color_palette, alpha_palette,
-                        (hint & (~IMAGE_HINT_CENTER)) | IMAGE_HINT_BLACK_BACKGROUND, NULL, NULL);
+        imlib_draw_image(&dst_img, src_img, 0, 0, x_scale, y_scale, &roi,
+                         args[ARG_channel].u_int, args[ARG_alpha].u_int, color_palette, alpha_palette,
+                         args[ARG_hint].u_int, NULL, NULL, NULL);
         fb_alloc_free_till_mark();
     }
 
-    if (arg_other) {
-        memcpy(arg_other, &dst_img, sizeof(image_t));
+    if ((!args[ARG_copy_to_fb].u_bool) && (!args[ARG_copy].u_bool)) {
+        py_helper_update_framebuffer(&dst_img);
+        memcpy(src_img, &dst_img, sizeof(image_t));
     }
 
     return py_image_from_struct(&dst_img);
 }
 
-static mp_obj_t py_image_to_bitmap(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    return py_image_to(PIXFORMAT_BINARY, NULL, false, NULL, false, false, n_args, args, kw_args);
+static mp_obj_t py_image_to_bitmap(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
+    return py_image_to(PIXFORMAT_BINARY, MP_ROM_NONE, false, n_args, args, kw_args);
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_to_bitmap_obj, 1, py_image_to_bitmap);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_to_bitmap_obj, 1, py_image_to_bitmap);
 
-static mp_obj_t py_image_to_grayscale(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    return py_image_to(PIXFORMAT_GRAYSCALE, NULL, false, NULL, false, false, n_args, args, kw_args);
+static mp_obj_t py_image_to_grayscale(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
+    return py_image_to(PIXFORMAT_GRAYSCALE, MP_ROM_NONE, false, n_args, args, kw_args);
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_to_grayscale_obj, 1, py_image_to_grayscale);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_to_grayscale_obj, 1, py_image_to_grayscale);
 
-static mp_obj_t py_image_to_rgb565(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    return py_image_to(PIXFORMAT_RGB565, NULL, false, NULL, false, false, n_args, args, kw_args);
+static mp_obj_t py_image_to_rgb565(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
+    return py_image_to(PIXFORMAT_RGB565, MP_ROM_NONE, false, n_args, args, kw_args);
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_to_rgb565_obj, 1, py_image_to_rgb565);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_to_rgb565_obj, 1, py_image_to_rgb565);
 
-static mp_obj_t py_image_to_rainbow(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    return py_image_to(PIXFORMAT_RGB565, rainbow_table, false, NULL, false, false, n_args, args, kw_args);
+static mp_obj_t py_image_to_rainbow(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
+    return py_image_to(PIXFORMAT_RGB565, MP_ROM_INT(COLOR_PALETTE_RAINBOW), false, n_args, args, kw_args);
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_to_rainbow_obj, 1, py_image_to_rainbow);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_to_rainbow_obj, 1, py_image_to_rainbow);
 
-static mp_obj_t py_image_to_ironbow(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    return py_image_to(PIXFORMAT_RGB565, ironbow_table, false,NULL, false, false, n_args, args, kw_args);
+static mp_obj_t py_image_to_ironbow(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
+    return py_image_to(PIXFORMAT_RGB565, MP_ROM_INT(COLOR_PALETTE_IRONBOW), false, n_args, args, kw_args);
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_to_ironbow_obj, 1, py_image_to_ironbow);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_to_ironbow_obj, 1, py_image_to_ironbow);
 
-static mp_obj_t py_image_to_jpeg(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    return py_image_to(PIXFORMAT_JPEG, NULL, false, NULL, false, false, n_args, args, kw_args);
+#if (MICROPY_PY_TOF == 1)
+static mp_obj_t py_image_to_depth(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
+    return py_image_to(PIXFORMAT_RGB565, MP_ROM_INT(COLOR_PALETTE_DEPTH), false, n_args, args, kw_args);
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_to_jpeg_obj, 1, py_image_to_jpeg);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_to_depth_obj, 1, py_image_to_depth);
+#endif // MICROPY_PY_TOF == 1
 
-static mp_obj_t py_image_to_png(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    return py_image_to(PIXFORMAT_PNG, NULL, false, NULL, false, false, n_args, args, kw_args);
+#if (OMV_GENX320_ENABLE == 1)
+static mp_obj_t py_image_to_evt_dark(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
+    return py_image_to(PIXFORMAT_RGB565, MP_ROM_INT(COLOR_PALETTE_EVT_DARK), false, n_args, args, kw_args);
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_to_png_obj, 1, py_image_to_png);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_to_evt_dark_obj, 1, py_image_to_evt_dark);
 
-static mp_obj_t py_image_copy(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    return py_image_to(PIXFORMAT_INVALID, NULL, true, NULL, false, false, n_args, args, kw_args);
+static mp_obj_t py_image_to_evt_light(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
+    return py_image_to(PIXFORMAT_RGB565, MP_ROM_INT(COLOR_PALETTE_EVT_LIGHT), false, n_args, args, kw_args);
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_copy_obj, 1, py_image_copy);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_to_evt_light_obj, 1, py_image_to_evt_light);
+#endif // OMV_GENX320_ENABLE == 1
 
-static mp_obj_t py_image_crop(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    return py_image_to(PIXFORMAT_INVALID, NULL, false, NULL, false, false, n_args, args, kw_args);
+static mp_obj_t py_image_to_jpeg(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
+    return py_image_to(PIXFORMAT_JPEG, MP_ROM_NONE, false, n_args, args, kw_args);
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_crop_obj, 1, py_image_crop);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_to_jpeg_obj, 1, py_image_to_jpeg);
 
-static mp_obj_t py_image_compress(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    return py_image_to(PIXFORMAT_JPEG, NULL, false, NULL, true, false, n_args, args, kw_args);
+static mp_obj_t py_image_to_png(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
+    return py_image_to(PIXFORMAT_PNG, MP_ROM_NONE, false, n_args, args, kw_args);
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_compress_obj, 1, py_image_compress);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_to_png_obj, 1, py_image_to_png);
 
-static mp_obj_t py_image_compress_for_ide(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    return py_image_to(PIXFORMAT_JPEG, NULL, false, NULL, true, true, n_args, args, kw_args);
+static mp_obj_t py_image_copy(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
+    return py_image_to(PIXFORMAT_INVALID, MP_ROM_NONE, true, n_args, args, kw_args);
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_compress_for_ide_obj, 1, py_image_compress_for_ide);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_copy_obj, 1, py_image_copy);
 
-static mp_obj_t py_image_compressed(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    return py_image_to(PIXFORMAT_JPEG, NULL, false, mp_const_true, true, false, n_args, args, kw_args);
+static mp_obj_t py_image_crop(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
+    return py_image_to(PIXFORMAT_INVALID, MP_ROM_NONE, false, n_args, args, kw_args);
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_compressed_obj, 1, py_image_compressed);
-
-static mp_obj_t py_image_compressed_for_ide(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    return py_image_to(PIXFORMAT_JPEG, NULL, false, mp_const_true, true, true, n_args, args, kw_args);
-}
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_compressed_for_ide_obj, 1, py_image_compressed_for_ide);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_crop_obj, 1, py_image_crop);
 
 #if defined(IMLIB_ENABLE_IMAGE_FILE_IO)
-static mp_obj_t py_image_save(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
+static mp_obj_t py_image_save(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
     image_t *arg_img = py_image_cobj(args[0]);
     const char *path = mp_obj_str_get_str(args[1]);
 
@@ -1287,26 +1261,24 @@ static mp_obj_t py_image_save(uint n_args, const mp_obj_t *args, mp_map_t *kw_ar
     fb_alloc_free_till_mark();
     return args[0];
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_save_obj, 2, py_image_save);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_save_obj, 2, py_image_save);
 #endif //IMLIB_ENABLE_IMAGE_FILE_IO
 
-static mp_obj_t py_image_flush(mp_obj_t img_obj)
-{
+static mp_obj_t py_image_flush(mp_obj_t img_obj) {
     framebuffer_update_jpeg_buffer();
     return mp_const_none;
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_image_flush_obj, py_image_flush);
+static MP_DEFINE_CONST_FUN_OBJ_1(py_image_flush_obj, py_image_flush);
 
 //////////////////
 // Drawing Methods
 //////////////////
 
-STATIC mp_obj_t py_image_clear(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    image_t *arg_img = py_helper_arg_to_image_not_compressed(args[0]);
+static mp_obj_t py_image_clear(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
+    image_t *arg_img = py_helper_arg_to_image(args[0], ARG_IMAGE_UNCOMPRESSED);
 
     image_t *arg_msk =
-            py_helper_keyword_to_image_mutable_mask(n_args, args, 1, kw_args);
+        py_helper_keyword_to_image(n_args, args, 1, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_mask), NULL);
 
     if (!arg_msk) {
         memset(arg_img->data, 0, image_size(arg_img));
@@ -1316,11 +1288,10 @@ STATIC mp_obj_t py_image_clear(uint n_args, const mp_obj_t *args, mp_map_t *kw_a
 
     return args[0];
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_clear_obj, 1, py_image_clear);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_clear_obj, 1, py_image_clear);
 
-STATIC mp_obj_t py_image_draw_line(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    image_t *arg_img = py_helper_arg_to_image_mutable(args[0]);
+static mp_obj_t py_image_draw_line(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
+    image_t *arg_img = py_helper_arg_to_image(args[0], ARG_IMAGE_MUTABLE);
 
     const mp_obj_t *arg_vec;
     uint offset = py_helper_consume_array(n_args, args, 1, 4, &arg_vec);
@@ -1337,11 +1308,10 @@ STATIC mp_obj_t py_image_draw_line(uint n_args, const mp_obj_t *args, mp_map_t *
     imlib_draw_line(arg_img, arg_x0, arg_y0, arg_x1, arg_y1, arg_c, arg_thickness);
     return args[0];
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_draw_line_obj, 2, py_image_draw_line);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_draw_line_obj, 2, py_image_draw_line);
 
-STATIC mp_obj_t py_image_draw_rectangle(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    image_t *arg_img = py_helper_arg_to_image_mutable(args[0]);
+static mp_obj_t py_image_draw_rectangle(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
+    image_t *arg_img = py_helper_arg_to_image(args[0], ARG_IMAGE_MUTABLE);
 
     const mp_obj_t *arg_vec;
     uint offset = py_helper_consume_array(n_args, args, 1, 4, &arg_vec);
@@ -1360,11 +1330,10 @@ STATIC mp_obj_t py_image_draw_rectangle(uint n_args, const mp_obj_t *args, mp_ma
     imlib_draw_rectangle(arg_img, arg_rx, arg_ry, arg_rw, arg_rh, arg_c, arg_thickness, arg_fill);
     return args[0];
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_draw_rectangle_obj, 2, py_image_draw_rectangle);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_draw_rectangle_obj, 2, py_image_draw_rectangle);
 
-STATIC mp_obj_t py_image_draw_circle(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    image_t *arg_img = py_helper_arg_to_image_mutable(args[0]);
+static mp_obj_t py_image_draw_circle(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
+    image_t *arg_img = py_helper_arg_to_image(args[0], ARG_IMAGE_MUTABLE);
 
     const mp_obj_t *arg_vec;
     uint offset = py_helper_consume_array(n_args, args, 1, 3, &arg_vec);
@@ -1382,11 +1351,10 @@ STATIC mp_obj_t py_image_draw_circle(uint n_args, const mp_obj_t *args, mp_map_t
     imlib_draw_circle(arg_img, arg_cx, arg_cy, arg_cr, arg_c, arg_thickness, arg_fill);
     return args[0];
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_draw_circle_obj, 2, py_image_draw_circle);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_draw_circle_obj, 2, py_image_draw_circle);
 
-STATIC mp_obj_t py_image_draw_ellipse(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    image_t *arg_img = py_helper_arg_to_image_mutable(args[0]);
+static mp_obj_t py_image_draw_ellipse(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
+    image_t *arg_img = py_helper_arg_to_image(args[0], ARG_IMAGE_MUTABLE);
 
     const mp_obj_t *arg_vec;
     uint offset = py_helper_consume_array(n_args, args, 1, 5, &arg_vec);
@@ -1406,11 +1374,10 @@ STATIC mp_obj_t py_image_draw_ellipse(uint n_args, const mp_obj_t *args, mp_map_
     imlib_draw_ellipse(arg_img, arg_cx, arg_cy, arg_rx, arg_ry, arg_r, arg_c, arg_thickness, arg_fill);
     return args[0];
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_draw_ellipse_obj, 2, py_image_draw_ellipse);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_draw_ellipse_obj, 2, py_image_draw_ellipse);
 
-STATIC mp_obj_t py_image_draw_string(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    image_t *arg_img = py_helper_arg_to_image_mutable(args[0]);
+static mp_obj_t py_image_draw_string(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
+    image_t *arg_img = py_helper_arg_to_image(args[0], ARG_IMAGE_MUTABLE);
 
     const mp_obj_t *arg_vec;
     uint offset = py_helper_consume_array(n_args, args, 1, 3, &arg_vec);
@@ -1448,11 +1415,10 @@ STATIC mp_obj_t py_image_draw_string(uint n_args, const mp_obj_t *args, mp_map_t
                       arg_string_rotation, arg_string_hmirror, arg_string_vflip);
     return args[0];
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_draw_string_obj, 2, py_image_draw_string);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_draw_string_obj, 2, py_image_draw_string);
 
-STATIC mp_obj_t py_image_draw_cross(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    image_t *arg_img = py_helper_arg_to_image_mutable(args[0]);
+static mp_obj_t py_image_draw_cross(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
+    image_t *arg_img = py_helper_arg_to_image(args[0], ARG_IMAGE_MUTABLE);
 
     const mp_obj_t *arg_vec;
     uint offset = py_helper_consume_array(n_args, args, 1, 2, &arg_vec);
@@ -1466,15 +1432,14 @@ STATIC mp_obj_t py_image_draw_cross(uint n_args, const mp_obj_t *args, mp_map_t 
     int arg_thickness =
         py_helper_keyword_int(n_args, args, offset + 2, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_thickness), 1);
 
-    imlib_draw_line(arg_img, arg_x - arg_s, arg_y        , arg_x + arg_s, arg_y        , arg_c, arg_thickness);
-    imlib_draw_line(arg_img, arg_x        , arg_y - arg_s, arg_x        , arg_y + arg_s, arg_c, arg_thickness);
+    imlib_draw_line(arg_img, arg_x - arg_s, arg_y, arg_x + arg_s, arg_y, arg_c, arg_thickness);
+    imlib_draw_line(arg_img, arg_x, arg_y - arg_s, arg_x, arg_y + arg_s, arg_c, arg_thickness);
     return args[0];
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_draw_cross_obj, 2, py_image_draw_cross);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_draw_cross_obj, 2, py_image_draw_cross);
 
-STATIC mp_obj_t py_image_draw_arrow(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    image_t *arg_img = py_helper_arg_to_image_mutable(args[0]);
+static mp_obj_t py_image_draw_arrow(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
+    image_t *arg_img = py_helper_arg_to_image(args[0], ARG_IMAGE_MUTABLE);
 
     const mp_obj_t *arg_vec;
     uint offset = py_helper_consume_array(n_args, args, 1, 4, &arg_vec);
@@ -1509,11 +1474,10 @@ STATIC mp_obj_t py_image_draw_arrow(uint n_args, const mp_obj_t *args, mp_map_t 
     imlib_draw_line(arg_img, arg_x1, arg_y1, a1x, a1y, arg_c, arg_thickness);
     return args[0];
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_draw_arrow_obj, 2, py_image_draw_arrow);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_draw_arrow_obj, 2, py_image_draw_arrow);
 
-STATIC mp_obj_t py_image_draw_edges(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    image_t *arg_img = py_helper_arg_to_image_mutable(args[0]);
+static mp_obj_t py_image_draw_edges(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
+    image_t *arg_img = py_helper_arg_to_image(args[0], ARG_IMAGE_MUTABLE);
 
     mp_obj_t *corners, *p0, *p1, *p2, *p3;
     mp_obj_get_array_fixed_n(args[1], 4, &corners);
@@ -1555,64 +1519,10 @@ STATIC mp_obj_t py_image_draw_edges(uint n_args, const mp_obj_t *args, mp_map_t 
 
     return args[0];
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_draw_edges_obj, 2, py_image_draw_edges);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_draw_edges_obj, 2, py_image_draw_edges);
 
-STATIC mp_obj_t py_image_draw_image(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    image_t *arg_img = py_helper_arg_to_image_mutable(args[0]);
-    image_t *arg_other = py_helper_arg_to_image_not_compressed(args[1]);
-
-    const mp_obj_t *arg_vec;
-    uint offset = py_helper_consume_array(n_args, args, 2, 2, &arg_vec);
-    int arg_x_off = mp_obj_get_int(arg_vec[0]);
-    int arg_y_off = mp_obj_get_int(arg_vec[1]);
-
-    float arg_x_scale = 1.f;
-    bool got_x_scale = py_helper_keyword_float_maybe(n_args, args, offset + 0, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_x_scale), &arg_x_scale);
-
-    float arg_y_scale = 1.f;
-    bool got_y_scale = py_helper_keyword_float_maybe(n_args, args, offset + 1, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_y_scale), &arg_y_scale);
-
-    rectangle_t arg_roi;
-    py_helper_keyword_rectangle_roi(arg_other, n_args, args, offset + 2, kw_args, &arg_roi);
-
-    int arg_rgb_channel = py_helper_keyword_int(n_args, args, offset + 3, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_rgb_channel), -1);
-    if ((arg_rgb_channel < -1) || (2 < arg_rgb_channel)) mp_raise_msg(&mp_type_ValueError, MP_ERROR_TEXT("-1 <= rgb_channel <= 2!"));
-
-    int arg_alpha = py_helper_keyword_int(n_args, args, offset + 4, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_alpha), 256);
-    if ((arg_alpha < 0) || (256 < arg_alpha)) mp_raise_msg(&mp_type_ValueError, MP_ERROR_TEXT("0 <= alpha <= 256!"));
-
-    const uint16_t *color_palette = py_helper_keyword_color_palette(n_args, args, offset + 5, kw_args, NULL);
-    const uint8_t *alpha_palette = py_helper_keyword_alpha_palette(n_args, args, offset + 6, kw_args, NULL);
-
-    image_hint_t hint = py_helper_keyword_int(n_args, args, offset + 7, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_hint), 0);
-
-    int arg_x_size;
-    bool got_x_size = py_helper_keyword_int_maybe(n_args, args, offset + 8, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_x_size), &arg_x_size);
-
-    int arg_y_size;
-    bool got_y_size = py_helper_keyword_int_maybe(n_args, args, offset + 9, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_y_size), &arg_y_size);
-
-    if (got_x_scale && got_x_size) mp_raise_msg(&mp_type_ValueError, MP_ERROR_TEXT("Choose either x_scale or x_size not both!"));
-    if (got_y_scale && got_y_size) mp_raise_msg(&mp_type_ValueError, MP_ERROR_TEXT("Choose either y_scale or y_size not both!"));
-
-    if (got_x_size) arg_x_scale = arg_x_size / ((float) arg_roi.w);
-    if (got_y_size) arg_y_scale = arg_y_size / ((float) arg_roi.h);
-
-    if ((!got_x_scale) && (!got_x_size) && got_y_size) arg_x_scale = arg_y_scale;
-    if ((!got_y_scale) && (!got_y_size) && got_x_size) arg_y_scale = arg_x_scale;
-
-    fb_alloc_mark();
-    imlib_draw_image(arg_img, arg_other, arg_x_off, arg_y_off, arg_x_scale, arg_y_scale, &arg_roi,
-                     arg_rgb_channel, arg_alpha, color_palette, alpha_palette, hint, NULL, NULL);
-    fb_alloc_free_till_mark();
-    return args[0];
-}
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_draw_image_obj, 3, py_image_draw_image);
-
-STATIC mp_obj_t py_image_draw_keypoints(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    image_t *arg_img = py_helper_arg_to_image_mutable(args[0]);
+static mp_obj_t py_image_draw_keypoints(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
+    image_t *arg_img = py_helper_arg_to_image(args[0], ARG_IMAGE_MUTABLE);
 
     int arg_c =
         py_helper_keyword_color(arg_img, n_args, args, 2, kw_args, -1); // White.
@@ -1633,8 +1543,8 @@ STATIC mp_obj_t py_image_draw_keypoints(uint n_args, const mp_obj_t *args, mp_ma
             int cx = mp_obj_get_int(tuple[0]);
             int cy = mp_obj_get_int(tuple[1]);
             int angle = mp_obj_get_int(tuple[2]) % 360;
-            int si = sin_table[angle] * arg_s;
-            int co = cos_table[angle] * arg_s;
+            int si = (int) (sin_table[angle] * arg_s);
+            int co = (int) (cos_table[angle] * arg_s);
             imlib_draw_line(arg_img, cx, cy, cx + co, cy + si, arg_c, arg_thickness);
             imlib_draw_circle(arg_img, cx, cy, (arg_s - 2) / 2, arg_c, arg_thickness, arg_fill);
         }
@@ -1646,8 +1556,8 @@ STATIC mp_obj_t py_image_draw_keypoints(uint n_args, const mp_obj_t *args, mp_ma
             int cx = kp->x;
             int cy = kp->y;
             int angle = kp->angle % 360;
-            int si = sin_table[angle] * arg_s;
-            int co = cos_table[angle] * arg_s;
+            int si = (int) (sin_table[angle] * arg_s);
+            int co = (int) (cos_table[angle] * arg_s);
             imlib_draw_line(arg_img, cx, cy, cx + co, cy + si, arg_c, arg_thickness);
             imlib_draw_circle(arg_img, cx, cy, (arg_s - 2) / 2, arg_c, arg_thickness, arg_fill);
         }
@@ -1658,11 +1568,10 @@ STATIC mp_obj_t py_image_draw_keypoints(uint n_args, const mp_obj_t *args, mp_ma
 
     return args[0];
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_draw_keypoints_obj, 2, py_image_draw_keypoints);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_draw_keypoints_obj, 2, py_image_draw_keypoints);
 
-STATIC mp_obj_t py_image_mask_rectangle(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    image_t *arg_img = py_helper_arg_to_image_mutable(args[0]);
+static mp_obj_t py_image_mask_rectangle(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
+    image_t *arg_img = py_helper_arg_to_image(args[0], ARG_IMAGE_MUTABLE);
     int arg_rx;
     int arg_ry;
     int arg_rw;
@@ -1695,11 +1604,10 @@ STATIC mp_obj_t py_image_mask_rectangle(uint n_args, const mp_obj_t *args, mp_ma
     fb_alloc_free_till_mark();
     return args[0];
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_mask_rectangle_obj, 1, py_image_mask_rectangle);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_mask_rectangle_obj, 1, py_image_mask_rectangle);
 
-STATIC mp_obj_t py_image_mask_circle(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    image_t *arg_img = py_helper_arg_to_image_mutable(args[0]);
+static mp_obj_t py_image_mask_circle(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
+    image_t *arg_img = py_helper_arg_to_image(args[0], ARG_IMAGE_MUTABLE);
     int arg_cx;
     int arg_cy;
     int arg_cr;
@@ -1729,11 +1637,10 @@ STATIC mp_obj_t py_image_mask_circle(uint n_args, const mp_obj_t *args, mp_map_t
     fb_alloc_free_till_mark();
     return args[0];
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_mask_circle_obj, 1, py_image_mask_circle);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_mask_circle_obj, 1, py_image_mask_circle);
 
-STATIC mp_obj_t py_image_mask_ellipse(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    image_t *arg_img = py_helper_arg_to_image_mutable(args[0]);
+static mp_obj_t py_image_mask_ellipse(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
+    image_t *arg_img = py_helper_arg_to_image(args[0], ARG_IMAGE_MUTABLE);
     int arg_cx;
     int arg_cy;
     int arg_rx;
@@ -1769,12 +1676,11 @@ STATIC mp_obj_t py_image_mask_ellipse(uint n_args, const mp_obj_t *args, mp_map_
     fb_alloc_free_till_mark();
     return args[0];
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_mask_ellipse_obj, 1, py_image_mask_ellipse);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_mask_ellipse_obj, 1, py_image_mask_ellipse);
 
 #ifdef IMLIB_ENABLE_FLOOD_FILL
-STATIC mp_obj_t py_image_flood_fill(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    image_t *arg_img = py_helper_arg_to_image_mutable(args[0]);
+static mp_obj_t py_image_flood_fill(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
+    image_t *arg_img = py_helper_arg_to_image(args[0], ARG_IMAGE_MUTABLE);
 
     const mp_obj_t *arg_vec;
     uint offset = py_helper_consume_array(n_args, args, 1, 2, &arg_vec);
@@ -1796,7 +1702,7 @@ STATIC mp_obj_t py_image_flood_fill(uint n_args, const mp_obj_t *args, mp_map_t 
     bool clear_background =
         py_helper_keyword_float(n_args, args, offset + 4, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_clear_background), false);
     image_t *arg_msk =
-        py_helper_keyword_to_image_mutable_mask(n_args, args, offset + 5, kw_args);
+        py_helper_keyword_to_image(n_args, args, offset + 5, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_mask), NULL);
 
     fb_alloc_mark();
     imlib_flood_fill(arg_img, arg_x_off, arg_y_off,
@@ -1805,67 +1711,222 @@ STATIC mp_obj_t py_image_flood_fill(uint n_args, const mp_obj_t *args, mp_map_t 
     fb_alloc_free_till_mark();
     return args[0];
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_flood_fill_obj, 2, py_image_flood_fill);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_flood_fill_obj, 2, py_image_flood_fill);
 #endif // IMLIB_ENABLE_FLOOD_FILL
 
+static mp_obj_t py_image_line_op(uint n_args, const mp_obj_t *pos_args, mp_map_t *kw_args,
+                                 imlib_draw_row_callback_t callback) {
+    enum {
+        ARG_image, ARG_x, ARG_y, ARG_x_scale, ARG_y_scale, ARG_roi,
+        ARG_channel, ARG_alpha, ARG_color_palette, ARG_alpha_palette, ARG_hint, ARG_mask
+    };
+    static const mp_arg_t allowed_args[] = {
+        { MP_QSTR_image, MP_ARG_OBJ | MP_ARG_REQUIRED, {.u_rom_obj = MP_ROM_NONE} },
+        { MP_QSTR_x, MP_ARG_INT,  {.u_int = 0 } },
+        { MP_QSTR_y, MP_ARG_INT,  {.u_int = 0 } },
+        { MP_QSTR_x_scale, MP_ARG_OBJ | MP_ARG_KW_ONLY, {.u_rom_obj = MP_ROM_NONE} },
+        { MP_QSTR_y_scale, MP_ARG_OBJ | MP_ARG_KW_ONLY, {.u_rom_obj = MP_ROM_NONE} },
+        { MP_QSTR_roi, MP_ARG_OBJ | MP_ARG_KW_ONLY, {.u_rom_obj = MP_ROM_NONE} },
+        { MP_QSTR_rgb_channel, MP_ARG_INT | MP_ARG_KW_ONLY,  {.u_int = -1 } },
+        { MP_QSTR_alpha, MP_ARG_INT | MP_ARG_KW_ONLY,  {.u_int = 255 } },
+        { MP_QSTR_color_palette, MP_ARG_OBJ | MP_ARG_KW_ONLY, {.u_rom_obj = MP_ROM_NONE} },
+        { MP_QSTR_alpha_palette, MP_ARG_OBJ | MP_ARG_KW_ONLY, {.u_rom_obj = MP_ROM_NONE} },
+        { MP_QSTR_hint, MP_ARG_INT | MP_ARG_KW_ONLY,  {.u_int = 0 } },
+        { MP_QSTR_mask, MP_ARG_OBJ | MP_ARG_KW_ONLY,  {.u_rom_obj = MP_ROM_NONE} },
+    };
+
+    // Parse args.
+    image_t *image = py_helper_arg_to_image(pos_args[0], ARG_IMAGE_MUTABLE);
+    mp_arg_val_t args[MP_ARRAY_SIZE(allowed_args)];
+    mp_arg_parse_all(n_args - 1, pos_args + 1, kw_args, MP_ARRAY_SIZE(allowed_args), allowed_args, args);
+
+    fb_alloc_mark();
+    uint32_t data;
+    image_t temp = {.w = 1, .h = 1, .pixfmt = image->pixfmt, .data = (uint8_t *) &data}, *other = &temp;
+
+    // Handle passing a scalar as an image.
+    if (mp_obj_is_integer(args[ARG_image].u_obj)) {
+        data = mp_obj_get_int(args[ARG_image].u_obj);
+        args[ARG_hint].u_int |= IMAGE_HINT_SCALE_ASPECT_IGNORE;
+        // Handle passing a rgb888 value as an image.
+    } else if (MP_OBJ_IS_TYPE(args[ARG_image].u_obj, &mp_type_tuple) ||
+               MP_OBJ_IS_TYPE(args[ARG_image].u_obj, &mp_type_list)) {
+        mp_obj_t *rgb888;
+        mp_obj_get_array_fixed_n(args[ARG_image].u_obj, 3, &rgb888);
+        int r = IM_CLAMP(mp_obj_get_int(rgb888[0]), COLOR_R8_MIN, COLOR_R8_MAX);
+        int g = IM_CLAMP(mp_obj_get_int(rgb888[1]), COLOR_G8_MIN, COLOR_G8_MAX);
+        int b = IM_CLAMP(mp_obj_get_int(rgb888[2]), COLOR_B8_MIN, COLOR_B8_MAX);
+        switch (image->pixfmt) {
+            case PIXFORMAT_BINARY: {
+                data = COLOR_RGB888_TO_Y(r, g, b) > 127;
+                break;
+            }
+            case PIXFORMAT_GRAYSCALE: {
+                data = COLOR_RGB888_TO_Y(r, g, b);
+                break;
+            }
+            case PIXFORMAT_RGB565: {
+                data = COLOR_R8_G8_B8_TO_RGB565(r, g, b);
+                break;
+            }
+            default: {
+                break;
+            }
+        }
+        args[ARG_hint].u_int |= IMAGE_HINT_SCALE_ASPECT_IGNORE;
+    } else {
+        other = py_helper_arg_to_image(args[ARG_image].u_obj, ARG_IMAGE_ANY | ARG_IMAGE_ALLOC);
+    }
+
+    rectangle_t roi = py_helper_arg_to_roi(args[ARG_roi].u_obj, other);
+
+    if (args[ARG_channel].u_int < -1 || args[ARG_channel].u_int > 2) {
+        mp_raise_msg(&mp_type_ValueError, MP_ERROR_TEXT("RGB channel can be 0, 1, or 2"));
+    }
+
+    if (args[ARG_alpha].u_int < 0 || args[ARG_alpha].u_int > 255) {
+        mp_raise_msg(&mp_type_ValueError, MP_ERROR_TEXT("Alpha ranges between 0 and 255"));
+    }
+
+    float x_scale = 1.0f;
+    float y_scale = 1.0f;
+    py_helper_arg_to_scale(args[ARG_x_scale].u_obj, args[ARG_y_scale].u_obj, &x_scale, &y_scale);
+
+    const uint16_t *color_palette = py_helper_arg_to_palette(args[ARG_color_palette].u_obj, PIXFORMAT_RGB565);
+    const uint8_t *alpha_palette = py_helper_arg_to_palette(args[ARG_alpha_palette].u_obj, PIXFORMAT_GRAYSCALE);
+
+    image_t *mask = NULL;
+    if (args[ARG_mask].u_obj != mp_const_none) {
+        mask = py_helper_arg_to_image(args[ARG_mask].u_obj, ARG_IMAGE_MUTABLE | ARG_IMAGE_ALLOC);
+    }
+
+    if ((!callback) && mask) {
+        callback = imlib_mask_line_op;
+    }
+
+    void *dst_row_override = NULL;
+    if (callback) {
+        dst_row_override = fb_alloc0(image_line_size(image), FB_ALLOC_CACHE_ALIGN);
+        // Necessary for alpha blending to work correctly.
+        args[ARG_hint].u_int |= IMAGE_HINT_BLACK_BACKGROUND;
+    }
+
+    imlib_draw_image(image, other, args[ARG_x].u_int, args[ARG_y].u_int, x_scale, y_scale, &roi,
+                     args[ARG_channel].u_int, args[ARG_alpha].u_int, color_palette, alpha_palette,
+                     args[ARG_hint].u_int, callback, mask, dst_row_override);
+
+    fb_alloc_free_till_mark();
+    return pos_args[0];
+}
+
+static mp_obj_t py_image_draw_image(uint n_args, const mp_obj_t *pos_args, mp_map_t *kw_args) {
+    return py_image_line_op(n_args, pos_args, kw_args, NULL);
+}
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_draw_image_obj, 1, py_image_draw_image);
 
 #ifdef IMLIB_ENABLE_ISP_OPS
 //////////////
 // ISP Methods
 //////////////
 
-STATIC mp_obj_t py_awb(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    image_t *arg_img =
-        py_helper_arg_to_image_not_compressed(args[0]);
-    bool arg_max =
-        py_helper_keyword_float(n_args, args, 1, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_max), false);
+static mp_obj_t py_awb(uint n_args, const mp_obj_t *pos_args, mp_map_t *kw_args) {
+    enum { ARG_max };
+    static const mp_arg_t allowed_args[] = {
+        { MP_QSTR_max, MP_ARG_BOOL | MP_ARG_KW_ONLY, {.u_bool = false} },
+    };
 
-    imlib_awb(arg_img, arg_max);
-    return args[0];
+    // Parse args.
+    image_t *image = py_helper_arg_to_image(pos_args[0], ARG_IMAGE_UNCOMPRESSED);
+    mp_arg_val_t args[MP_ARRAY_SIZE(allowed_args)];
+    mp_arg_parse_all(n_args - 1, pos_args + 1, kw_args, MP_ARRAY_SIZE(allowed_args), allowed_args, args);
+
+    uint32_t r_out, g_out, b_out;
+
+    if (args[ARG_max].u_bool) {
+        imlib_awb_rgb_max(image, &r_out, &g_out, &b_out); // white patch algorithm
+    } else {
+        imlib_awb_rgb_avg(image, &r_out, &g_out, &b_out); // gray world algorithm
+    }
+
+    imlib_awb(image, r_out, g_out, b_out);
+    return pos_args[0];
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_awb_obj, 1, py_awb);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_awb_obj, 1, py_awb);
 
-STATIC mp_obj_t py_ccm(mp_obj_t img_obj, mp_obj_t ccm_obj)
-{
-    image_t *arg_img =
-        py_helper_arg_to_image_mutable(img_obj);
+static mp_obj_t py_ccm(mp_obj_t img_obj, mp_obj_t ccm_obj) {
+    image_t *image = py_helper_arg_to_image(img_obj, ARG_IMAGE_MUTABLE);
+
+    float ccm[12] = {};
+    bool offset = false;
 
     size_t len;
     mp_obj_t *items;
     mp_obj_get_array(ccm_obj, &len, &items);
 
-    if ((len != 9) && (len != 12)) {
-        mp_raise_msg(&mp_type_ValueError, MP_ERROR_TEXT("Expected a 3x3 or 4x3 matrix!"));
+    // Form [[rr, rg, rb], [gr, gg, gb], [br, bg, bb]]
+    // Form [[rr, rg, rb], [gr, gg, gb], [br, bg, bb], [xx, xx, xx]]
+    // Form [[rr, rg, rb, ro], [gr, gg, gb, go], [br, bg, bb, bo]]
+    // Form [[rr, rg, rb, ro], [gr, gg, gb, go], [br, bg, bb, bo], [xx, xx, xx, xx]]
+    if ((len == 3) || (len == 4)) {
+        for (size_t i = 0; i < 3; i++) {
+            size_t row_len;
+            mp_obj_t *row_items;
+            mp_obj_get_array(items[i], &row_len, &row_items);
+            offset = offset || (row_len == 4);
+            if ((row_len == 3) || (row_len == 4)) {
+                for (size_t j = 0; j < row_len; j++) {
+                    ccm[(i * 4) + j] = mp_obj_get_float(row_items[j]);
+                }
+            } else {
+                mp_raise_msg(&mp_type_ValueError, MP_ERROR_TEXT("Unexpected matrix dimensions!"));
+            }
+        }
+        // Form [rr, rg, rb, gr, gg, gb, br, bg, bb]
+    } else if (len == 9) {
+        for (size_t i = 0; i < 3; i++) {
+            for (size_t j = 0; j < 3; j++) {
+                ccm[(i * 4) + j] = mp_obj_get_float(items[(i * 3) + j]);
+            }
+        }
+        // Form [rr, rg, rb, ro, gr, gg, gb, go, br, bg, bb, bo]
+        // Form [rr, rg, rb, ro, gr, gg, gb, go, br, bg, bb, bo, xx, xx, xx, xx]
+    } else if (len == 12 || len == 16) {
+        offset = true;
+        for (size_t i = 0; i < 12; i++) {
+            ccm[i] = mp_obj_get_float(items[i]);
+        }
+    } else {
+        mp_raise_msg(&mp_type_ValueError, MP_ERROR_TEXT("Unexpected matrix dimensions!"));
     }
 
-    float ccm[12] = {};
-    for (size_t i = 0; i < len; i++) {
-        ccm[i] = mp_obj_get_float(items[i]);
-    }
-
-    imlib_ccm(arg_img, ccm, len == 12);
+    imlib_ccm(image, ccm, offset);
     return img_obj;
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_2(py_ccm_obj, py_ccm);
+static MP_DEFINE_CONST_FUN_OBJ_2(py_ccm_obj, py_ccm);
 
-STATIC mp_obj_t py_image_gamma(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    image_t *arg_img =
-        py_helper_arg_to_image_mutable(args[0]);
-    float arg_gamma =
-        py_helper_keyword_float(n_args, args, 1, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_gamma), 1.0f);
-    float arg_contrast =
-        py_helper_keyword_float(n_args, args, 2, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_contrast), 1.0f);
-    float arg_brightness =
-        py_helper_keyword_float(n_args, args, 3, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_brightness), 0.0f);
+static mp_obj_t py_image_gamma(uint n_args, const mp_obj_t *pos_args, mp_map_t *kw_args) {
+    enum { ARG_gamma, ARG_contrast, ARG_brightness };
+    static const mp_arg_t allowed_args[] = {
+        { MP_QSTR_gamma, MP_ARG_OBJ | MP_ARG_KW_ONLY, {.u_rom_obj = MP_ROM_NONE } },
+        { MP_QSTR_contrast, MP_ARG_OBJ | MP_ARG_KW_ONLY, {.u_rom_obj = MP_ROM_NONE } },
+        { MP_QSTR_brightness, MP_ARG_OBJ | MP_ARG_KW_ONLY, {.u_rom_obj = MP_ROM_NONE } },
+    };
+
+    // Parse args.
+    image_t *image = py_helper_arg_to_image(pos_args[0], ARG_IMAGE_UNCOMPRESSED);
+    mp_arg_val_t args[MP_ARRAY_SIZE(allowed_args)];
+    mp_arg_parse_all(n_args - 1, pos_args + 1, kw_args, MP_ARRAY_SIZE(allowed_args), allowed_args, args);
+
+    float gamma = py_helper_arg_to_float(args[ARG_gamma].u_obj, 1.0f);
+    float contrast = py_helper_arg_to_float(args[ARG_contrast].u_obj, 1.0f);
+    float brightness = py_helper_arg_to_float(args[ARG_brightness].u_obj, 0.0f);
 
     fb_alloc_mark();
-    imlib_gamma(arg_img, arg_gamma, arg_contrast, arg_brightness);
+    imlib_gamma(image, gamma, contrast, brightness);
     fb_alloc_free_till_mark();
-    return args[0];
+    return pos_args[0];
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_gamma_obj, 1, py_image_gamma);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_gamma_obj, 1, py_image_gamma);
 
 #endif // IMLIB_ENABLE_ISP_OPS
 
@@ -1874,35 +1935,35 @@ STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_gamma_obj, 1, py_image_gamma);
 // Binary Methods
 /////////////////
 
-STATIC mp_obj_t py_image_binary(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    image_t *arg_img = py_helper_arg_to_image_mutable(args[0]);
+static mp_obj_t py_image_binary(uint n_args, const mp_obj_t *pos_args, mp_map_t *kw_args) {
+    enum { ARG_thresholds, ARG_invert, ARG_zero, ARG_mask, ARG_to_bitmap, ARG_copy };
+    static const mp_arg_t allowed_args[] = {
+        { MP_QSTR_thresholds, MP_ARG_OBJ | MP_ARG_REQUIRED, },
+        { MP_QSTR_invert, MP_ARG_BOOL | MP_ARG_KW_ONLY, {.u_bool = false} },
+        { MP_QSTR_zero, MP_ARG_BOOL | MP_ARG_KW_ONLY, {.u_bool = false} },
+        { MP_QSTR_mask, MP_ARG_OBJ | MP_ARG_KW_ONLY,  {.u_rom_obj = MP_ROM_NONE} },
+        { MP_QSTR_to_bitmap, MP_ARG_BOOL | MP_ARG_KW_ONLY, {.u_bool = false} },
+        { MP_QSTR_copy, MP_ARG_BOOL | MP_ARG_KW_ONLY, {.u_bool = false} },
+    };
 
-    list_t arg_thresholds;
-    list_init(&arg_thresholds, sizeof(color_thresholds_list_lnk_data_t));
-    py_helper_arg_to_thresholds(args[1], &arg_thresholds);
+    // Parse args.
+    image_t *image = py_helper_arg_to_image(pos_args[0], ARG_IMAGE_MUTABLE);
+    mp_arg_val_t args[MP_ARRAY_SIZE(allowed_args)];
+    mp_arg_parse_all(n_args - 1, pos_args + 1, kw_args, MP_ARRAY_SIZE(allowed_args), allowed_args, args);
 
-    bool arg_invert =
-        py_helper_keyword_int(n_args, args, 2, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_invert), false);
-    bool arg_zero =
-        py_helper_keyword_int(n_args, args, 3, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_zero), false);
-    image_t *arg_msk =
-        py_helper_keyword_to_image_mutable_mask(n_args, args, 4, kw_args);
-    bool arg_to_bitmap =
-        py_helper_keyword_int(n_args, args, 5, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_to_bitmap), false);
-    bool arg_copy =
-        py_helper_keyword_int(n_args, args, 6, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_copy), false);
+    if (args[ARG_to_bitmap].u_bool && (image->pixfmt != PIXFORMAT_BINARY) &&
+        (args[ARG_zero].u_bool || (args[ARG_mask].u_obj != mp_const_none))) {
+        mp_raise_msg(&mp_type_ValueError, MP_ERROR_TEXT("Incompatible arguments!"));
+    }
 
-    if (arg_to_bitmap && (!arg_copy)) {
-        switch(arg_img->pixfmt) {
+    if (args[ARG_to_bitmap].u_bool && (!args[ARG_copy].u_bool)) {
+        switch (image->pixfmt) {
             case PIXFORMAT_GRAYSCALE: {
-                PY_ASSERT_TRUE_MSG((arg_img->w >= (sizeof(uint32_t)/sizeof(uint8_t))),
-                                   "Can't convert to bitmap in place!");
+                PY_ASSERT_TRUE_MSG((image->w >= 4), "Can't convert to bitmap in place!");
                 break;
             }
             case PIXFORMAT_RGB565: {
-                PY_ASSERT_TRUE_MSG((arg_img->w >= (sizeof(uint32_t)/sizeof(uint16_t))),
-                                   "Can't convert to bitmap in place!");
+                PY_ASSERT_TRUE_MSG((image->w >= 2), "Can't convert to bitmap in place!");
                 break;
             }
             default: {
@@ -1911,249 +1972,121 @@ STATIC mp_obj_t py_image_binary(uint n_args, const mp_obj_t *args, mp_map_t *kw_
         }
     }
 
+    list_t thresholds;
+    list_init(&thresholds, sizeof(color_thresholds_list_lnk_data_t));
+    py_helper_arg_to_thresholds(args[ARG_thresholds].u_obj, &thresholds);
+
     image_t out;
-    out.w = arg_img->w;
-    out.h = arg_img->h;
-    out.pixfmt = arg_to_bitmap ? PIXFORMAT_BINARY  : arg_img->pixfmt;
-    out.pixels = arg_copy ? xalloc(image_size(&out)) : arg_img->pixels;
+    out.w = image->w;
+    out.h = image->h;
+    out.pixfmt = args[ARG_to_bitmap].u_bool ? PIXFORMAT_BINARY : image->pixfmt;
+
+    if (args[ARG_copy].u_bool) {
+        image_xalloc(&out, image_size(&out));
+    } else {
+        out.data = image->data;
+    }
 
     fb_alloc_mark();
-    imlib_binary(&out, arg_img, &arg_thresholds, arg_invert, arg_zero, arg_msk);
+    image_t *mask = NULL;
+    if (args[ARG_mask].u_obj != mp_const_none) {
+        mask = py_helper_arg_to_image(args[ARG_mask].u_obj, ARG_IMAGE_MUTABLE | ARG_IMAGE_ALLOC);
+    }
+
+    imlib_binary(&out, image, &thresholds, args[ARG_invert].u_bool, args[ARG_zero].u_bool, mask);
     fb_alloc_free_till_mark();
 
-    list_free(&arg_thresholds);
+    list_free(&thresholds);
 
-    if (arg_to_bitmap && (!arg_copy)) {
-        arg_img->pixfmt = PIXFORMAT_BINARY;
+    if (args[ARG_to_bitmap].u_bool && (!args[ARG_copy].u_bool)) {
+        image->pixfmt = PIXFORMAT_BINARY;
         py_helper_update_framebuffer(&out);
     }
 
     return py_image_from_struct(&out);
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_binary_obj, 2, py_image_binary);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_binary_obj, 1, py_image_binary);
 
-STATIC mp_obj_t py_image_invert(mp_obj_t img_obj)
-{
-    imlib_invert(py_helper_arg_to_image_mutable(img_obj));
+static mp_obj_t py_image_invert(mp_obj_t img_obj) {
+    imlib_invert(py_helper_arg_to_image(img_obj, ARG_IMAGE_MUTABLE));
     return img_obj;
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_image_invert_obj, py_image_invert);
+static MP_DEFINE_CONST_FUN_OBJ_1(py_image_invert_obj, py_image_invert);
 
-STATIC mp_obj_t py_image_b_and(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    image_t *arg_img =
-        py_helper_arg_to_image_mutable(args[0]);
-    image_t *arg_msk =
-        py_helper_keyword_to_image_mutable_mask(n_args, args, 2, kw_args);
+static mp_obj_t py_image_b_and(uint n_args, const mp_obj_t *pos_args, mp_map_t *kw_args) {
+    return py_image_line_op(n_args, pos_args, kw_args, imlib_b_and_line_op);
+}
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_b_and_obj, 1, py_image_b_and);
+
+static mp_obj_t py_image_b_nand(uint n_args, const mp_obj_t *pos_args, mp_map_t *kw_args) {
+    return py_image_line_op(n_args, pos_args, kw_args, imlib_b_nand_line_op);
+}
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_b_nand_obj, 1, py_image_b_nand);
+
+static mp_obj_t py_image_b_or(uint n_args, const mp_obj_t *pos_args, mp_map_t *kw_args) {
+    return py_image_line_op(n_args, pos_args, kw_args, imlib_b_or_line_op);
+}
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_b_or_obj, 1, py_image_b_or);
+
+static mp_obj_t py_image_b_nor(uint n_args, const mp_obj_t *pos_args, mp_map_t *kw_args) {
+    return py_image_line_op(n_args, pos_args, kw_args, imlib_b_nor_line_op);
+}
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_b_nor_obj, 1, py_image_b_nor);
+
+static mp_obj_t py_image_b_xor(uint n_args, const mp_obj_t *pos_args, mp_map_t *kw_args) {
+    return py_image_line_op(n_args, pos_args, kw_args, imlib_b_xor_line_op);
+}
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_b_xor_obj, 1, py_image_b_xor);
+
+static mp_obj_t py_image_b_xnor(uint n_args, const mp_obj_t *pos_args, mp_map_t *kw_args) {
+    return py_image_line_op(n_args, pos_args, kw_args, imlib_b_xnor_line_op);
+}
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_b_xnor_obj, 1, py_image_b_xnor);
+
+static mp_obj_t py_image_binary_morph_op(uint n_args, const mp_obj_t *pos_args, mp_map_t *kw_args,
+                                         binary_morph_op_t op) {
+    enum { ARG_threshold, ARG_mask };
+    static const mp_arg_t allowed_args[] = {
+        { MP_QSTR_threshold, MP_ARG_INT | MP_ARG_KW_ONLY,  {.u_int = 0 } },
+        { MP_QSTR_mask, MP_ARG_OBJ | MP_ARG_KW_ONLY,  {.u_rom_obj = MP_ROM_NONE} },
+    };
+
+    // Parse args.
+    image_t *image = py_helper_arg_to_image(pos_args[0], ARG_IMAGE_MUTABLE);
+    int ksize = py_helper_arg_to_ksize(pos_args[1]);
+    mp_arg_val_t args[MP_ARRAY_SIZE(allowed_args)];
+    mp_arg_parse_all(n_args - 2, pos_args + 2, kw_args, MP_ARRAY_SIZE(allowed_args), allowed_args, args);
 
     fb_alloc_mark();
-
-    if (MP_OBJ_IS_STR(args[1])) {
-        imlib_b_and(arg_img, mp_obj_str_get_str(args[1]), NULL, 0, arg_msk);
-    } else if (MP_OBJ_IS_TYPE(args[1], &py_image_type)) {
-        imlib_b_and(arg_img, NULL, py_helper_arg_to_image_mutable(args[1]), 0, arg_msk);
-    } else {
-        imlib_b_and(arg_img, NULL, NULL,
-                    py_helper_keyword_color(arg_img, n_args, args, 1, NULL, 0),
-                    arg_msk);
+    image_t *mask = NULL;
+    if (args[ARG_mask].u_obj != mp_const_none) {
+        mask = py_helper_arg_to_image(args[ARG_mask].u_obj, ARG_IMAGE_MUTABLE | ARG_IMAGE_ALLOC);
     }
 
+    op(image, ksize, args[ARG_threshold].u_int, mask);
     fb_alloc_free_till_mark();
-
-    return args[0];
+    return pos_args[0];
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_b_and_obj, 2, py_image_b_and);
 
-STATIC mp_obj_t py_image_b_nand(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    image_t *arg_img =
-        py_helper_arg_to_image_mutable(args[0]);
-    image_t *arg_msk =
-        py_helper_keyword_to_image_mutable_mask(n_args, args, 2, kw_args);
-
-    fb_alloc_mark();
-
-    if (MP_OBJ_IS_STR(args[1])) {
-        imlib_b_nand(arg_img, mp_obj_str_get_str(args[1]), NULL, 0, arg_msk);
-    } else if (MP_OBJ_IS_TYPE(args[1], &py_image_type)) {
-        imlib_b_nand(arg_img, NULL, py_helper_arg_to_image_mutable(args[1]), 0, arg_msk);
-    } else {
-        imlib_b_nand(arg_img, NULL, NULL,
-                     py_helper_keyword_color(arg_img, n_args, args, 1, NULL, 0),
-                     arg_msk);
-    }
-
-    fb_alloc_free_till_mark();
-
-    return args[0];
+static mp_obj_t py_image_erode(uint n_args, const mp_obj_t *pos_args, mp_map_t *kw_args) {
+    return py_image_binary_morph_op(n_args, pos_args, kw_args, imlib_erode);
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_b_nand_obj, 2, py_image_b_nand);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_erode_obj, 2, py_image_erode);
 
-STATIC mp_obj_t py_image_b_or(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    image_t *arg_img =
-        py_helper_arg_to_image_mutable(args[0]);
-    image_t *arg_msk =
-        py_helper_keyword_to_image_mutable_mask(n_args, args, 2, kw_args);
-
-    fb_alloc_mark();
-
-    if (MP_OBJ_IS_STR(args[1])) {
-        imlib_b_or(arg_img, mp_obj_str_get_str(args[1]), NULL, 0, arg_msk);
-    } else if (MP_OBJ_IS_TYPE(args[1], &py_image_type)) {
-        imlib_b_or(arg_img, NULL, py_helper_arg_to_image_mutable(args[1]), 0, arg_msk);
-    } else {
-        imlib_b_or(arg_img, NULL, NULL,
-                   py_helper_keyword_color(arg_img, n_args, args, 1, NULL, 0),
-                   arg_msk);
-    }
-
-    fb_alloc_free_till_mark();
-
-    return args[0];
+static mp_obj_t py_image_dilate(uint n_args, const mp_obj_t *pos_args, mp_map_t *kw_args) {
+    return py_image_binary_morph_op(n_args, pos_args, kw_args, imlib_dilate);
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_b_or_obj, 2, py_image_b_or);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_dilate_obj, 2, py_image_dilate);
 
-STATIC mp_obj_t py_image_b_nor(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    image_t *arg_img =
-        py_helper_arg_to_image_mutable(args[0]);
-    image_t *arg_msk =
-        py_helper_keyword_to_image_mutable_mask(n_args, args, 2, kw_args);
-
-    fb_alloc_mark();
-
-    if (MP_OBJ_IS_STR(args[1])) {
-        imlib_b_nor(arg_img, mp_obj_str_get_str(args[1]), NULL, 0, arg_msk);
-    } else if (MP_OBJ_IS_TYPE(args[1], &py_image_type)) {
-        imlib_b_nor(arg_img, NULL, py_helper_arg_to_image_mutable(args[1]), 0, arg_msk);
-    } else {
-        imlib_b_nor(arg_img, NULL, NULL,
-                    py_helper_keyword_color(arg_img, n_args, args, 1, NULL, 0),
-                    arg_msk);
-    }
-
-    fb_alloc_free_till_mark();
-
-    return args[0];
+static mp_obj_t py_image_open(uint n_args, const mp_obj_t *pos_args, mp_map_t *kw_args) {
+    return py_image_binary_morph_op(n_args, pos_args, kw_args, imlib_open);
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_b_nor_obj, 2, py_image_b_nor);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_open_obj, 2, py_image_open);
 
-STATIC mp_obj_t py_image_b_xor(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    image_t *arg_img =
-        py_helper_arg_to_image_mutable(args[0]);
-    image_t *arg_msk =
-        py_helper_keyword_to_image_mutable_mask(n_args, args, 2, kw_args);
-
-    fb_alloc_mark();
-
-    if (MP_OBJ_IS_STR(args[1])) {
-        imlib_b_xor(arg_img, mp_obj_str_get_str(args[1]), NULL, 0, arg_msk);
-    } else if (MP_OBJ_IS_TYPE(args[1], &py_image_type)) {
-        imlib_b_xor(arg_img, NULL, py_helper_arg_to_image_mutable(args[1]), 0, arg_msk);
-    } else {
-        imlib_b_xor(arg_img, NULL, NULL,
-                    py_helper_keyword_color(arg_img, n_args, args, 1, NULL, 0),
-                    arg_msk);
-    }
-
-    fb_alloc_free_till_mark();
-
-    return args[0];
+static mp_obj_t py_image_close(uint n_args, const mp_obj_t *pos_args, mp_map_t *kw_args) {
+    return py_image_binary_morph_op(n_args, pos_args, kw_args, imlib_close);
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_b_xor_obj, 2, py_image_b_xor);
-
-STATIC mp_obj_t py_image_b_xnor(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    image_t *arg_img =
-        py_helper_arg_to_image_mutable(args[0]);
-    image_t *arg_msk =
-        py_helper_keyword_to_image_mutable_mask(n_args, args, 2, kw_args);
-
-    fb_alloc_mark();
-
-    if (MP_OBJ_IS_STR(args[1])) {
-        imlib_b_xnor(arg_img, mp_obj_str_get_str(args[1]), NULL, 0, arg_msk);
-    } else if (MP_OBJ_IS_TYPE(args[1], &py_image_type)) {
-        imlib_b_xnor(arg_img, NULL, py_helper_arg_to_image_mutable(args[1]), 0, arg_msk);
-    } else {
-        imlib_b_xnor(arg_img, NULL, NULL,
-                     py_helper_keyword_color(arg_img, n_args, args, 1, NULL, 0),
-                     arg_msk);
-    }
-
-    fb_alloc_free_till_mark();
-
-    return args[0];
-}
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_b_xnor_obj, 2, py_image_b_xnor);
-
-STATIC mp_obj_t py_image_erode(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    int arg_ksize =
-        py_helper_arg_to_ksize(args[1]);
-    int arg_threshold =
-        py_helper_keyword_int(n_args, args, 2, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_threshold),
-            py_helper_ksize_to_n(arg_ksize) - 1);
-    image_t *arg_msk =
-        py_helper_keyword_to_image_mutable_mask(n_args, args, 3, kw_args);
-
-    fb_alloc_mark();
-    imlib_erode(py_helper_arg_to_image_mutable(args[0]), arg_ksize, arg_threshold, arg_msk);
-    fb_alloc_free_till_mark();
-    return args[0];
-}
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_erode_obj, 2, py_image_erode);
-
-STATIC mp_obj_t py_image_dilate(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    int arg_ksize =
-        py_helper_arg_to_ksize(args[1]);
-    int arg_threshold =
-        py_helper_keyword_int(n_args, args, 2, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_threshold),
-            0);
-    image_t *arg_msk =
-        py_helper_keyword_to_image_mutable_mask(n_args, args, 3, kw_args);
-
-    fb_alloc_mark();
-    imlib_dilate(py_helper_arg_to_image_mutable(args[0]), arg_ksize, arg_threshold, arg_msk);
-    fb_alloc_free_till_mark();
-    return args[0];
-}
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_dilate_obj, 2, py_image_dilate);
-
-STATIC mp_obj_t py_image_open(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    int arg_ksize =
-        py_helper_arg_to_ksize(args[1]);
-    int arg_threshold =
-        py_helper_keyword_int(n_args, args, 2, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_threshold), 0);
-    image_t *arg_msk =
-        py_helper_keyword_to_image_mutable_mask(n_args, args, 3, kw_args);
-
-    fb_alloc_mark();
-    imlib_open(py_helper_arg_to_image_mutable(args[0]), arg_ksize, arg_threshold, arg_msk);
-    fb_alloc_free_till_mark();
-    return args[0];
-}
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_open_obj, 2, py_image_open);
-
-STATIC mp_obj_t py_image_close(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    int arg_ksize =
-        py_helper_arg_to_ksize(args[1]);
-    int arg_threshold =
-        py_helper_keyword_int(n_args, args, 2, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_threshold), 0);
-    image_t *arg_msk =
-        py_helper_keyword_to_image_mutable_mask(n_args, args, 3, kw_args);
-
-    fb_alloc_mark();
-    imlib_close(py_helper_arg_to_image_mutable(args[0]), arg_ksize, arg_threshold, arg_msk);
-    fb_alloc_free_till_mark();
-    return args[0];
-}
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_close_obj, 2, py_image_close);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_close_obj, 2, py_image_close);
 #endif // IMLIB_ENABLE_BINARY_OPS
 
 #ifdef IMLIB_ENABLE_MATH_OPS
@@ -2161,336 +2094,78 @@ STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_close_obj, 2, py_image_close);
 // Math Methods
 ///////////////
 
-STATIC mp_obj_t py_image_negate(mp_obj_t img_obj)
-{
-    imlib_negate(py_helper_arg_to_image_mutable(img_obj));
-    return img_obj;
+static mp_obj_t py_image_add(uint n_args, const mp_obj_t *pos_args, mp_map_t *kw_args) {
+    return py_image_line_op(n_args, pos_args, kw_args, imlib_add_line_op);
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_image_negate_obj, py_image_negate);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_add_obj, 1, py_image_add);
 
-STATIC mp_obj_t py_image_replace(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    image_t *arg_img =
-        py_helper_arg_to_image_mutable(args[0]);
-    bool arg_hmirror =
-        py_helper_keyword_int(n_args, args, 2, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_hmirror), false);
-    bool arg_vflip =
-        py_helper_keyword_int(n_args, args, 3, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_vflip), false);
-    bool arg_transpose =
-        py_helper_keyword_int(n_args, args, 4, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_transpose), false);
-    image_t *arg_msk =
-        py_helper_keyword_to_image_mutable_mask(n_args, args, 5, kw_args);
-
-    if (arg_transpose) {
-        size_t size0 = image_size(arg_img);
-        int w = arg_img->w;
-        int h = arg_img->h;
-        arg_img->w = h;
-        arg_img->h = w;
-        size_t size1 = image_size(arg_img);
-        arg_img->w = w;
-        arg_img->h = h;
-        PY_ASSERT_TRUE_MSG(size1 <= size0,
-                           "Unable to transpose the image because it would grow in size!");
-    }
-
-    fb_alloc_mark();
-
-    mp_obj_t arg_1 = (n_args > 1) ? args[1] : args[0];
-
-    if (MP_OBJ_IS_STR(arg_1)) {
-        imlib_replace(arg_img, mp_obj_str_get_str(arg_1), NULL, 0,
-                      arg_hmirror, arg_vflip, arg_transpose, arg_msk);
-    } else if (MP_OBJ_IS_TYPE(arg_1, &py_image_type)) {
-        imlib_replace(arg_img, NULL, py_helper_arg_to_image_mutable(arg_1), 0,
-                      arg_hmirror, arg_vflip, arg_transpose, arg_msk);
-    } else {
-        imlib_replace(arg_img, NULL, NULL,
-                      py_helper_keyword_color(arg_img, n_args, args, 1, NULL, 0),
-                      arg_hmirror, arg_vflip, arg_transpose, arg_msk);
-    }
-
-    fb_alloc_free_till_mark();
-    py_helper_update_framebuffer(arg_img);
-    return args[0];
+static mp_obj_t py_image_sub(uint n_args, const mp_obj_t *pos_args, mp_map_t *kw_args) {
+    return py_image_line_op(n_args, pos_args, kw_args, imlib_sub_line_op);
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_replace_obj, 1, py_image_replace);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_sub_obj, 1, py_image_sub);
 
-STATIC mp_obj_t py_image_add(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    image_t *arg_img =
-        py_helper_arg_to_image_mutable(args[0]);
-    image_t *arg_msk =
-        py_helper_keyword_to_image_mutable_mask(n_args, args, 2, kw_args);
-
-    fb_alloc_mark();
-
-    if (MP_OBJ_IS_STR(args[1])) {
-        imlib_add(arg_img, mp_obj_str_get_str(args[1]), NULL, 0, arg_msk);
-    } else if (MP_OBJ_IS_TYPE(args[1], &py_image_type)) {
-        imlib_add(arg_img, NULL, py_helper_arg_to_image_mutable(args[1]), 0, arg_msk);
-    } else {
-        imlib_add(arg_img, NULL, NULL,
-                  py_helper_keyword_color(arg_img, n_args, args, 1, NULL, 0),
-                  arg_msk);
-    }
-
-    fb_alloc_free_till_mark();
-
-    return args[0];
+static mp_obj_t py_image_rsub(uint n_args, const mp_obj_t *pos_args, mp_map_t *kw_args) {
+    return py_image_line_op(n_args, pos_args, kw_args, imlib_rsub_line_op);
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_add_obj, 2, py_image_add);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_rsub_obj, 1, py_image_rsub);
 
-STATIC mp_obj_t py_image_sub(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    image_t *arg_img =
-        py_helper_arg_to_image_mutable(args[0]);
-    bool arg_reverse =
-        py_helper_keyword_int(n_args, args, 2, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_reverse), false);
-    image_t *arg_msk =
-        py_helper_keyword_to_image_mutable_mask(n_args, args, 3, kw_args);
-
-    fb_alloc_mark();
-
-    if (MP_OBJ_IS_STR(args[1])) {
-        imlib_sub(arg_img, mp_obj_str_get_str(args[1]), NULL, 0, arg_reverse, arg_msk);
-    } else if (MP_OBJ_IS_TYPE(args[1], &py_image_type)) {
-        imlib_sub(arg_img, NULL, py_helper_arg_to_image_mutable(args[1]), 0, arg_reverse, arg_msk);
-    } else {
-        imlib_sub(arg_img, NULL, NULL,
-                  py_helper_keyword_color(arg_img, n_args, args, 1, NULL, 0),
-                  arg_reverse, arg_msk);
-    }
-
-    fb_alloc_free_till_mark();
-
-    return args[0];
+static mp_obj_t py_image_min(uint n_args, const mp_obj_t *pos_args, mp_map_t *kw_args) {
+    return py_image_line_op(n_args, pos_args, kw_args, imlib_min_line_op);
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_sub_obj, 2, py_image_sub);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_min_obj, 1, py_image_min);
 
-STATIC mp_obj_t py_image_mul(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    image_t *arg_img =
-        py_helper_arg_to_image_mutable(args[0]);
-    bool arg_invert =
-        py_helper_keyword_int(n_args, args, 2, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_invert), false);
-    image_t *arg_msk =
-        py_helper_keyword_to_image_mutable_mask(n_args, args, 3, kw_args);
-
-    fb_alloc_mark();
-
-    if (MP_OBJ_IS_STR(args[1])) {
-        imlib_mul(arg_img, mp_obj_str_get_str(args[1]), NULL, 0, arg_invert, arg_msk);
-    } else if (MP_OBJ_IS_TYPE(args[1], &py_image_type)) {
-        imlib_mul(arg_img, NULL, py_helper_arg_to_image_mutable(args[1]), 0, arg_invert, arg_msk);
-    } else {
-        imlib_mul(arg_img, NULL, NULL,
-                  py_helper_keyword_color(arg_img, n_args, args, 1, NULL, 0),
-                  arg_invert, arg_msk);
-    }
-
-    fb_alloc_free_till_mark();
-
-    return args[0];
+static mp_obj_t py_image_max(uint n_args, const mp_obj_t *pos_args, mp_map_t *kw_args) {
+    return py_image_line_op(n_args, pos_args, kw_args, imlib_max_line_op);
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_mul_obj, 2, py_image_mul);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_max_obj, 1, py_image_max);
 
-STATIC mp_obj_t py_image_div(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    image_t *arg_img =
-        py_helper_arg_to_image_mutable(args[0]);
-    bool arg_invert =
-        py_helper_keyword_int(n_args, args, 2, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_invert), false);
-    bool arg_mod =
-        py_helper_keyword_int(n_args, args, 3, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_mod), false);
-    image_t *arg_msk =
-        py_helper_keyword_to_image_mutable_mask(n_args, args, 4, kw_args);
-
-    fb_alloc_mark();
-
-    if (MP_OBJ_IS_STR(args[1])) {
-        imlib_div(arg_img, mp_obj_str_get_str(args[1]), NULL, 0,
-                  arg_invert, arg_mod, arg_msk);
-    } else if (MP_OBJ_IS_TYPE(args[1], &py_image_type)) {
-        imlib_div(arg_img, NULL, py_helper_arg_to_image_mutable(args[1]), 0,
-                  arg_invert, arg_mod, arg_msk);
-    } else {
-        imlib_div(arg_img, NULL, NULL,
-                  py_helper_keyword_color(arg_img, n_args, args, 1, NULL, 0),
-                  arg_invert, arg_mod, arg_msk);
-    }
-
-    fb_alloc_free_till_mark();
-
-    return args[0];
+static mp_obj_t py_image_difference(uint n_args, const mp_obj_t *pos_args, mp_map_t *kw_args) {
+    return py_image_line_op(n_args, pos_args, kw_args, imlib_difference_line_op);
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_div_obj, 2, py_image_div);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_difference_obj, 1, py_image_difference);
+#endif // IMLIB_ENABLE_MATH_OPS
 
-STATIC mp_obj_t py_image_min(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    image_t *arg_img =
-        py_helper_arg_to_image_mutable(args[0]);
-    image_t *arg_msk =
-        py_helper_keyword_to_image_mutable_mask(n_args, args, 2, kw_args);
-
-    fb_alloc_mark();
-
-    if (MP_OBJ_IS_STR(args[1])) {
-        imlib_min(arg_img, mp_obj_str_get_str(args[1]), NULL, 0, arg_msk);
-    } else if (MP_OBJ_IS_TYPE(args[1], &py_image_type)) {
-        imlib_min(arg_img, NULL, py_helper_arg_to_image_mutable(args[1]), 0, arg_msk);
-    } else {
-        imlib_min(arg_img, NULL, NULL,
-                  py_helper_keyword_color(arg_img, n_args, args, 1, NULL, 0),
-                  arg_msk);
-    }
-
-    fb_alloc_free_till_mark();
-
-    return args[0];
+#if defined(IMLIB_ENABLE_MATH_OPS) && defined(IMLIB_ENABLE_BINARY_OPS)
+static mp_obj_t py_image_top_hat(uint n_args, const mp_obj_t *pos_args, mp_map_t *kw_args) {
+    return py_image_binary_morph_op(n_args, pos_args, kw_args, imlib_top_hat);
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_min_obj, 2, py_image_min);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_top_hat_obj, 2, py_image_top_hat);
 
-STATIC mp_obj_t py_image_max(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    image_t *arg_img =
-        py_helper_arg_to_image_mutable(args[0]);
-    image_t *arg_msk =
-        py_helper_keyword_to_image_mutable_mask(n_args, args, 2, kw_args);
-
-    fb_alloc_mark();
-
-    if (MP_OBJ_IS_STR(args[1])) {
-        imlib_max(arg_img, mp_obj_str_get_str(args[1]), NULL, 0, arg_msk);
-    } else if (MP_OBJ_IS_TYPE(args[1], &py_image_type)) {
-        imlib_max(arg_img, NULL, py_helper_arg_to_image_mutable(args[1]), 0, arg_msk);
-    } else {
-        imlib_max(arg_img, NULL, NULL,
-                  py_helper_keyword_color(arg_img, n_args, args, 1, NULL, 0),
-                  arg_msk);
-    }
-
-    fb_alloc_free_till_mark();
-
-    return args[0];
+static mp_obj_t py_image_black_hat(uint n_args, const mp_obj_t *pos_args, mp_map_t *kw_args) {
+    return py_image_binary_morph_op(n_args, pos_args, kw_args, imlib_black_hat);
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_max_obj, 2, py_image_max);
-
-STATIC mp_obj_t py_image_difference(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    image_t *arg_img =
-        py_helper_arg_to_image_mutable(args[0]);
-    image_t *arg_msk =
-        py_helper_keyword_to_image_mutable_mask(n_args, args, 2, kw_args);
-
-    fb_alloc_mark();
-
-    if (MP_OBJ_IS_STR(args[1])) {
-        imlib_difference(arg_img, mp_obj_str_get_str(args[1]), NULL, 0, arg_msk);
-    } else if (MP_OBJ_IS_TYPE(args[1], &py_image_type)) {
-        imlib_difference(arg_img, NULL, py_helper_arg_to_image_mutable(args[1]), 0, arg_msk);
-    } else {
-        imlib_difference(arg_img, NULL, NULL,
-                         py_helper_keyword_color(arg_img, n_args, args, 1, NULL, 0),
-                         arg_msk);
-    }
-
-    fb_alloc_free_till_mark();
-
-    return args[0];
-}
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_difference_obj, 2, py_image_difference);
-
-STATIC mp_obj_t py_image_blend(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    image_t *arg_img =
-        py_helper_arg_to_image_mutable(args[0]);
-    float arg_alpha =
-        py_helper_keyword_int(n_args, args, 2, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_alpha), 128) / 256.0f;
-    PY_ASSERT_TRUE_MSG((0 <= arg_alpha) && (arg_alpha <= 1), "Error: 0 <= alpha <= 256!");
-    image_t *arg_msk =
-        py_helper_keyword_to_image_mutable_mask(n_args, args, 3, kw_args);
-
-    fb_alloc_mark();
-
-    if (MP_OBJ_IS_STR(args[1])) {
-        imlib_blend(arg_img, mp_obj_str_get_str(args[1]), NULL, 0, arg_alpha, arg_msk);
-    } else if (MP_OBJ_IS_TYPE(args[1], &py_image_type)) {
-        imlib_blend(arg_img, NULL, py_helper_arg_to_image_mutable(args[1]), 0, arg_alpha, arg_msk);
-    } else {
-        imlib_blend(arg_img, NULL, NULL,
-                    py_helper_keyword_color(arg_img, n_args, args, 1, NULL, 0),
-                    arg_alpha, arg_msk);
-    }
-
-    fb_alloc_free_till_mark();
-
-    return args[0];
-}
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_blend_obj, 2, py_image_blend);
-#endif//IMLIB_ENABLE_MATH_OPS
-
-#if defined(IMLIB_ENABLE_MATH_OPS) && defined (IMLIB_ENABLE_BINARY_OPS)
-STATIC mp_obj_t py_image_top_hat(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    int arg_ksize =
-        py_helper_arg_to_ksize(args[1]);
-    int arg_threshold =
-        py_helper_keyword_int(n_args, args, 2, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_threshold), 0);
-    image_t *arg_msk =
-        py_helper_keyword_to_image_mutable_mask(n_args, args, 3, kw_args);
-
-    fb_alloc_mark();
-    imlib_top_hat(py_helper_arg_to_image_mutable(args[0]), arg_ksize, arg_threshold, arg_msk);
-    fb_alloc_free_till_mark();
-    return args[0];
-}
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_top_hat_obj, 2, py_image_top_hat);
-
-STATIC mp_obj_t py_image_black_hat(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    int arg_ksize =
-        py_helper_arg_to_ksize(args[1]);
-    int arg_threshold =
-        py_helper_keyword_int(n_args, args, 2, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_threshold), 0);
-    image_t *arg_msk =
-        py_helper_keyword_to_image_mutable_mask(n_args, args, 3, kw_args);
-
-    fb_alloc_mark();
-    imlib_black_hat(py_helper_arg_to_image_mutable(args[0]), arg_ksize, arg_threshold, arg_msk);
-    fb_alloc_free_till_mark();
-    return args[0];
-}
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_black_hat_obj, 2, py_image_black_hat);
-#endif // defined(IMLIB_ENABLE_MATH_OPS) && defined (IMLIB_ENABLE_BINARY_OPS)
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_black_hat_obj, 2, py_image_black_hat);
+#endif // defined(IMLIB_ENABLE_MATH_OPS) && defined(IMLIB_ENABLE_BINARY_OPS)
 
 ////////////////////
 // Filtering Methods
 ////////////////////
 
-static mp_obj_t py_image_histeq(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
+static mp_obj_t py_image_histeq(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
     image_t *arg_img =
-        py_helper_arg_to_image_mutable(args[0]);
+        py_helper_arg_to_image(args[0], ARG_IMAGE_MUTABLE);
     bool arg_adaptive =
         py_helper_keyword_int(n_args, args, 1, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_adaptive), false);
     float arg_clip_limit =
         py_helper_keyword_float(n_args, args, 2, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_clip_limit), -1);
     image_t *arg_msk =
-        py_helper_keyword_to_image_mutable_mask(n_args, args, 3, kw_args);
+        py_helper_keyword_to_image(n_args, args, 3, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_mask), NULL);
 
     fb_alloc_mark();
-    if (arg_adaptive) imlib_clahe_histeq(arg_img, arg_clip_limit, arg_msk); else imlib_histeq(arg_img, arg_msk);
+    if (arg_adaptive) {
+        imlib_clahe_histeq(arg_img, arg_clip_limit, arg_msk);
+    } else{
+        imlib_histeq(arg_img, arg_msk);
+    }
     fb_alloc_free_till_mark();
     return args[0];
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_histeq_obj, 1, py_image_histeq);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_histeq_obj, 1, py_image_histeq);
 
 #ifdef IMLIB_ENABLE_MEAN
-STATIC mp_obj_t py_image_mean(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
+static mp_obj_t py_image_mean(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
     image_t *arg_img =
-        py_helper_arg_to_image_mutable(args[0]);
+        py_helper_arg_to_image(args[0], ARG_IMAGE_MUTABLE);
     int arg_ksize =
         py_helper_arg_to_ksize(args[1]);
     bool arg_threshold =
@@ -2500,21 +2175,20 @@ STATIC mp_obj_t py_image_mean(uint n_args, const mp_obj_t *args, mp_map_t *kw_ar
     bool arg_invert =
         py_helper_keyword_int(n_args, args, 4, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_invert), false);
     image_t *arg_msk =
-        py_helper_keyword_to_image_mutable_mask(n_args, args, 5, kw_args);
+        py_helper_keyword_to_image(n_args, args, 5, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_mask), NULL);
 
     fb_alloc_mark();
     imlib_mean_filter(arg_img, arg_ksize, arg_threshold, arg_offset, arg_invert, arg_msk);
     fb_alloc_free_till_mark();
     return args[0];
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_mean_obj, 2, py_image_mean);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_mean_obj, 2, py_image_mean);
 #endif // IMLIB_ENABLE_MEAN
 
 #ifdef IMLIB_ENABLE_MEDIAN
-STATIC mp_obj_t py_image_median(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
+static mp_obj_t py_image_median(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
     image_t *arg_img =
-        py_helper_arg_to_image_mutable(args[0]);
+        py_helper_arg_to_image(args[0], ARG_IMAGE_MUTABLE);
     int arg_ksize =
         py_helper_arg_to_ksize(args[1]);
     float arg_percentile =
@@ -2527,21 +2201,20 @@ STATIC mp_obj_t py_image_median(uint n_args, const mp_obj_t *args, mp_map_t *kw_
     bool arg_invert =
         py_helper_keyword_int(n_args, args, 5, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_invert), false);
     image_t *arg_msk =
-        py_helper_keyword_to_image_mutable_mask(n_args, args, 6, kw_args);
+        py_helper_keyword_to_image(n_args, args, 6, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_mask), NULL);
 
     fb_alloc_mark();
     imlib_median_filter(arg_img, arg_ksize, arg_percentile, arg_threshold, arg_offset, arg_invert, arg_msk);
     fb_alloc_free_till_mark();
     return args[0];
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_median_obj, 2, py_image_median);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_median_obj, 2, py_image_median);
 #endif // IMLIB_ENABLE_MEDIAN
 
 #ifdef IMLIB_ENABLE_MODE
-STATIC mp_obj_t py_image_mode(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
+static mp_obj_t py_image_mode(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
     image_t *arg_img =
-        py_helper_arg_to_image_mutable(args[0]);
+        py_helper_arg_to_image(args[0], ARG_IMAGE_MUTABLE);
     int arg_ksize =
         py_helper_arg_to_ksize(args[1]);
     bool arg_threshold =
@@ -2551,21 +2224,20 @@ STATIC mp_obj_t py_image_mode(uint n_args, const mp_obj_t *args, mp_map_t *kw_ar
     bool arg_invert =
         py_helper_keyword_int(n_args, args, 4, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_invert), false);
     image_t *arg_msk =
-        py_helper_keyword_to_image_mutable_mask(n_args, args, 5, kw_args);
+        py_helper_keyword_to_image(n_args, args, 5, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_mask), NULL);
 
     fb_alloc_mark();
     imlib_mode_filter(arg_img, arg_ksize, arg_threshold, arg_offset, arg_invert, arg_msk);
     fb_alloc_free_till_mark();
     return args[0];
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_mode_obj, 2, py_image_mode);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_mode_obj, 2, py_image_mode);
 #endif // IMLIB_ENABLE_MODE
 
 #ifdef IMLIB_ENABLE_MIDPOINT
-STATIC mp_obj_t py_image_midpoint(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
+static mp_obj_t py_image_midpoint(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
     image_t *arg_img =
-        py_helper_arg_to_image_mutable(args[0]);
+        py_helper_arg_to_image(args[0], ARG_IMAGE_MUTABLE);
     int arg_ksize =
         py_helper_arg_to_ksize(args[1]);
     float arg_bias =
@@ -2578,182 +2250,232 @@ STATIC mp_obj_t py_image_midpoint(uint n_args, const mp_obj_t *args, mp_map_t *k
     bool arg_invert =
         py_helper_keyword_int(n_args, args, 5, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_invert), false);
     image_t *arg_msk =
-        py_helper_keyword_to_image_mutable_mask(n_args, args, 6, kw_args);
+        py_helper_keyword_to_image(n_args, args, 6, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_mask), NULL);
 
     fb_alloc_mark();
     imlib_midpoint_filter(arg_img, arg_ksize, arg_bias, arg_threshold, arg_offset, arg_invert, arg_msk);
     fb_alloc_free_till_mark();
     return args[0];
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_midpoint_obj, 2, py_image_midpoint);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_midpoint_obj, 2, py_image_midpoint);
 #endif // IMLIB_ENABLE_MIDPOINT
 
 #ifdef IMLIB_ENABLE_MORPH
-STATIC mp_obj_t py_image_morph(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    image_t *arg_img =
-        py_helper_arg_to_image_mutable(args[0]);
-    int arg_ksize =
-        py_helper_arg_to_ksize(args[1]);
+static mp_obj_t py_image_morph(uint n_args, const mp_obj_t *pos_args, mp_map_t *kw_args) {
+    enum { ARG_mul, ARG_add, ARG_threshold, ARG_offset, ARG_invert, ARG_mask };
+    static const mp_arg_t allowed_args[] = {
+        { MP_QSTR_mul, MP_ARG_OBJ | MP_ARG_KW_ONLY,  {.u_rom_obj = MP_ROM_NONE } },
+        { MP_QSTR_add, MP_ARG_OBJ | MP_ARG_KW_ONLY,  {.u_rom_obj = MP_ROM_NONE } },
+        { MP_QSTR_threshold, MP_ARG_BOOL | MP_ARG_KW_ONLY,  {.u_bool = false } },
+        { MP_QSTR_offset, MP_ARG_INT | MP_ARG_KW_ONLY,  {.u_int = 0 } },
+        { MP_QSTR_invert, MP_ARG_BOOL | MP_ARG_KW_ONLY,  {.u_bool = false } },
+        { MP_QSTR_mask, MP_ARG_OBJ | MP_ARG_KW_ONLY,  {.u_rom_obj = MP_ROM_NONE} },
+    };
 
-    int n = py_helper_ksize_to_n(arg_ksize);
+    // Parse args.
+    image_t *image = py_helper_arg_to_image(pos_args[0], ARG_IMAGE_MUTABLE);
+    int ksize = py_helper_arg_to_ksize(pos_args[1]);
+    int n = (ksize * 2) + 1;
 
-    mp_obj_t *krn;
-    mp_obj_get_array_fixed_n(args[2], n, &krn);
+    if (n > 31) {
+        mp_raise_msg(&mp_type_ValueError, MP_ERROR_TEXT("Kernel size too large!"));
+    }
+
+    size_t len;
+    mp_obj_t *items;
+    mp_obj_get_array(pos_args[2], &len, &items);
+
+    mp_arg_val_t args[MP_ARRAY_SIZE(allowed_args)];
+    mp_arg_parse_all(n_args - 3, pos_args + 3, kw_args, MP_ARRAY_SIZE(allowed_args), allowed_args, args);
 
     fb_alloc_mark();
 
-    int *arg_krn = fb_alloc(n * sizeof(int), FB_ALLOC_NO_HINT);
-    int arg_m = 0;
+    int krn[n * n];
+    int sum = 0;
 
-    for (int i = 0; i < n; i++) {
-        arg_krn[i] = mp_obj_get_int(krn[i]);
-        arg_m += arg_krn[i];
+    if (len == n) {
+        for (int i = 0; i < n; i++) {
+            size_t row_len;
+            mp_obj_t *row_items;
+            mp_obj_get_array(items[i], &row_len, &row_items);
+
+            if (row_len == n) {
+                for (int j = 0; j < n; j++) {
+                    krn[(i * n) + j] = mp_obj_get_int(row_items[j]);
+                    sum += krn[(i * n) + j];
+                }
+            } else {
+                mp_raise_msg(&mp_type_ValueError, MP_ERROR_TEXT("Unexpected kernel dimensions!"));
+            }
+        }
+    } else if (len == (n * n)) {
+        for (int i = 0; i < (n * n); i++) {
+            krn[i] = mp_obj_get_int(items[i]);
+            sum += krn[i];
+        }
+    } else {
+        mp_raise_msg(&mp_type_ValueError, MP_ERROR_TEXT("Unexpected kernel dimensions!"));
     }
 
-    if (arg_m == 0) {
-        arg_m = 1;
+    if (sum == 0) {
+        sum = 1;
     }
 
-    float arg_mul =
-        py_helper_keyword_float(n_args, args, 3, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_mul), 1.0f / arg_m);
-    float arg_add =
-        py_helper_keyword_float(n_args, args, 4, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_add), 0.0f);
-    bool arg_threshold =
-        py_helper_keyword_int(n_args, args, 5, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_threshold), false);
-    int arg_offset =
-        py_helper_keyword_int(n_args, args, 6, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_offset), 0);
-    bool arg_invert =
-        py_helper_keyword_int(n_args, args, 7, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_invert), false);
-    image_t *arg_msk =
-        py_helper_keyword_to_image_mutable_mask(n_args, args, 8, kw_args);
+    image_t *mask = NULL;
+    if (args[ARG_mask].u_obj != mp_const_none) {
+        mask = py_helper_arg_to_image(args[ARG_mask].u_obj, ARG_IMAGE_MUTABLE | ARG_IMAGE_ALLOC);
+    }
 
-    imlib_morph(arg_img, arg_ksize, arg_krn, arg_mul, arg_add, arg_threshold, arg_offset, arg_invert, arg_msk);
+    float mul = py_helper_arg_to_float(args[ARG_mul].u_obj, 1.0f);
+    float add = py_helper_arg_to_float(args[ARG_add].u_obj, 0.0f);
+
+    imlib_morph(image, ksize, krn, mul / sum, add, args[ARG_threshold].u_bool,
+                args[ARG_offset].u_int, args[ARG_invert].u_bool, mask);
     fb_alloc_free_till_mark();
-    return args[0];
+    return pos_args[0];
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_morph_obj, 3, py_image_morph);
-#endif //IMLIB_ENABLE_MORPH
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_morph_obj, 3, py_image_morph);
+#endif // IMLIB_ENABLE_MORPH
 
 #ifdef IMLIB_ENABLE_GAUSSIAN
-STATIC mp_obj_t py_image_gaussian(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    image_t *arg_img =
-        py_helper_arg_to_image_mutable(args[0]);
-    int arg_ksize =
-        py_helper_arg_to_ksize(args[1]);
+static mp_obj_t py_image_gaussian(uint n_args, const mp_obj_t *pos_args, mp_map_t *kw_args) {
+    enum { ARG_unsharp, ARG_mul, ARG_add, ARG_threshold, ARG_offset, ARG_invert, ARG_mask };
+    static const mp_arg_t allowed_args[] = {
+        { MP_QSTR_unsharp, MP_ARG_BOOL | MP_ARG_KW_ONLY, {.u_bool = false } },
+        { MP_QSTR_mul, MP_ARG_OBJ | MP_ARG_KW_ONLY,  {.u_rom_obj = MP_ROM_NONE } },
+        { MP_QSTR_add, MP_ARG_OBJ | MP_ARG_KW_ONLY,  {.u_rom_obj = MP_ROM_NONE } },
+        { MP_QSTR_threshold, MP_ARG_BOOL | MP_ARG_KW_ONLY,  {.u_bool = false } },
+        { MP_QSTR_offset, MP_ARG_INT | MP_ARG_KW_ONLY,  {.u_int = 0 } },
+        { MP_QSTR_invert, MP_ARG_BOOL | MP_ARG_KW_ONLY,  {.u_bool = false } },
+        { MP_QSTR_mask, MP_ARG_OBJ | MP_ARG_KW_ONLY,  {.u_rom_obj = MP_ROM_NONE} },
+    };
 
-    int k_2 = arg_ksize * 2;
-    int n = k_2 + 1;
+    // Parse args.
+    image_t *image = py_helper_arg_to_image(pos_args[0], ARG_IMAGE_MUTABLE);
+    int ksize = py_helper_arg_to_ksize(pos_args[1]);
+    int n = (ksize * 2) + 1;
+
+    if (n > 31) {
+        mp_raise_msg(&mp_type_ValueError, MP_ERROR_TEXT("Kernel size too large!"));
+    }
+
+    mp_arg_val_t args[MP_ARRAY_SIZE(allowed_args)];
+    mp_arg_parse_all(n_args - 2, pos_args + 2, kw_args, MP_ARRAY_SIZE(allowed_args), allowed_args, args);
 
     fb_alloc_mark();
 
-    int *pascal = fb_alloc(n * sizeof(int), FB_ALLOC_NO_HINT);
+    int pascal[n];
     pascal[0] = 1;
 
-    for (int i = 0; i < k_2; i++) { // Compute a row of pascal's triangle.
-        pascal[i + 1] = (pascal[i] * (k_2 - i)) / (i + 1);
+    for (int i = 0; i < (ksize * 2); i++) {
+        // Compute a row of pascal's triangle.
+        pascal[i + 1] = (pascal[i] * ((ksize * 2) - i)) / (i + 1);
     }
 
-    int *arg_krn = fb_alloc(n * n * sizeof(int), FB_ALLOC_NO_HINT);
-    int arg_m = 0;
+    int krn[n * n];
+    int sum = 0;
 
     for (int i = 0; i < n; i++) {
         for (int j = 0; j < n; j++) {
             int temp = pascal[i] * pascal[j];
-            arg_krn[(i * n) + j] = temp;
-            arg_m += temp;
+            krn[(i * n) + j] = temp;
+            sum += temp;
         }
     }
 
-    if (py_helper_keyword_int(n_args, args, 2, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_unsharp), false)) {
-        arg_krn[((n/2)*n)+(n/2)] -= arg_m * 2;
-        arg_m = -arg_m;
+    if (args[ARG_unsharp].u_bool) {
+        krn[(n * n) / 2] -= sum * 2;
+        sum = -sum;
     }
 
-    float arg_mul =
-        py_helper_keyword_float(n_args, args, 3, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_mul), 1.0f / arg_m);
-    float arg_add =
-        py_helper_keyword_float(n_args, args, 4, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_add), 0.0f);
-    bool arg_threshold =
-        py_helper_keyword_int(n_args, args, 5, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_threshold), false);
-    int arg_offset =
-        py_helper_keyword_int(n_args, args, 6, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_offset), 0);
-    bool arg_invert =
-        py_helper_keyword_int(n_args, args, 7, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_invert), false);
-    image_t *arg_msk =
-        py_helper_keyword_to_image_mutable_mask(n_args, args, 8, kw_args);
+    image_t *mask = NULL;
+    if (args[ARG_mask].u_obj != mp_const_none) {
+        mask = py_helper_arg_to_image(args[ARG_mask].u_obj, ARG_IMAGE_MUTABLE | ARG_IMAGE_ALLOC);
+    }
 
-    imlib_morph(arg_img, arg_ksize, arg_krn, arg_mul, arg_add, arg_threshold, arg_offset, arg_invert, arg_msk);
+    float mul = py_helper_arg_to_float(args[ARG_mul].u_obj, 1.0f);
+    float add = py_helper_arg_to_float(args[ARG_add].u_obj, 0.0f);
+
+    imlib_morph(image, ksize, krn, mul / sum, add, args[ARG_threshold].u_bool,
+                args[ARG_offset].u_int, args[ARG_invert].u_bool, mask);
     fb_alloc_free_till_mark();
-    return args[0];
+    return pos_args[0];
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_gaussian_obj, 2, py_image_gaussian);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_gaussian_obj, 2, py_image_gaussian);
 #endif // IMLIB_ENABLE_GAUSSIAN
 
 #ifdef IMLIB_ENABLE_LAPLACIAN
-STATIC mp_obj_t py_image_laplacian(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    image_t *arg_img =
-        py_helper_arg_to_image_mutable(args[0]);
-    int arg_ksize =
-        py_helper_arg_to_ksize(args[1]);
+static mp_obj_t py_image_laplacian(uint n_args, const mp_obj_t *pos_args, mp_map_t *kw_args) {
+    enum { ARG_sharpen, ARG_mul, ARG_add, ARG_threshold, ARG_offset, ARG_invert, ARG_mask };
+    static const mp_arg_t allowed_args[] = {
+        { MP_QSTR_sharpen, MP_ARG_BOOL | MP_ARG_KW_ONLY, {.u_bool = false } },
+        { MP_QSTR_mul, MP_ARG_OBJ | MP_ARG_KW_ONLY,  {.u_rom_obj = MP_ROM_NONE } },
+        { MP_QSTR_add, MP_ARG_OBJ | MP_ARG_KW_ONLY,  {.u_rom_obj = MP_ROM_NONE } },
+        { MP_QSTR_threshold, MP_ARG_BOOL | MP_ARG_KW_ONLY,  {.u_bool = false } },
+        { MP_QSTR_offset, MP_ARG_INT | MP_ARG_KW_ONLY,  {.u_int = 0 } },
+        { MP_QSTR_invert, MP_ARG_BOOL | MP_ARG_KW_ONLY,  {.u_bool = false } },
+        { MP_QSTR_mask, MP_ARG_OBJ | MP_ARG_KW_ONLY,  {.u_rom_obj = MP_ROM_NONE} },
+    };
 
-    int k_2 = arg_ksize * 2;
-    int n = k_2 + 1;
+    // Parse args.
+    image_t *image = py_helper_arg_to_image(pos_args[0], ARG_IMAGE_MUTABLE);
+    int ksize = py_helper_arg_to_ksize(pos_args[1]);
+    int n = (ksize * 2) + 1;
+
+    if (n > 31) {
+        mp_raise_msg(&mp_type_ValueError, MP_ERROR_TEXT("Kernel size too large!"));
+    }
+
+    mp_arg_val_t args[MP_ARRAY_SIZE(allowed_args)];
+    mp_arg_parse_all(n_args - 2, pos_args + 2, kw_args, MP_ARRAY_SIZE(allowed_args), allowed_args, args);
 
     fb_alloc_mark();
 
-    int *pascal = fb_alloc(n * sizeof(int), FB_ALLOC_NO_HINT);
+    int pascal[n];
     pascal[0] = 1;
 
-    for (int i = 0; i < k_2; i++) { // Compute a row of pascal's triangle.
-        pascal[i + 1] = (pascal[i] * (k_2 - i)) / (i + 1);
+    for (int i = 0; i < (ksize * 2); i++) {
+        // Compute a row of pascal's triangle.
+        pascal[i + 1] = (pascal[i] * ((ksize * 2) - i)) / (i + 1);
     }
 
-    int *arg_krn = fb_alloc(n * n * sizeof(int), FB_ALLOC_NO_HINT);
-    int arg_m = 0;
+    int krn[n * n];
+    int sum = 0;
 
     for (int i = 0; i < n; i++) {
         for (int j = 0; j < n; j++) {
             int temp = pascal[i] * pascal[j];
-            arg_krn[(i * n) + j] = -temp;
-            arg_m += temp;
+            krn[(i * n) + j] = -temp;
+            sum += temp;
         }
     }
 
-    arg_krn[((n/2)*n)+(n/2)] += arg_m;
-    arg_m = arg_krn[((n/2)*n)+(n/2)];
+    krn[(n * n) / 2] += sum;
 
-    if (py_helper_keyword_int(n_args, args, 2, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_sharpen), false)) {
-        arg_krn[((n/2)*n)+(n/2)] += arg_m;
+    if (args[ARG_sharpen].u_bool) {
+        krn[(n * n) / 2] += sum;
     }
 
-    float arg_mul =
-        py_helper_keyword_float(n_args, args, 3, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_mul), 1.0f / arg_m);
-    float arg_add =
-        py_helper_keyword_float(n_args, args, 4, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_add), 0.0f);
-    bool arg_threshold =
-        py_helper_keyword_int(n_args, args, 5, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_threshold), false);
-    int arg_offset =
-        py_helper_keyword_int(n_args, args, 6, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_offset), 0);
-    bool arg_invert =
-        py_helper_keyword_int(n_args, args, 7, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_invert), false);
-    image_t *arg_msk =
-        py_helper_keyword_to_image_mutable_mask(n_args, args, 8, kw_args);
+    image_t *mask = NULL;
+    if (args[ARG_mask].u_obj != mp_const_none) {
+        mask = py_helper_arg_to_image(args[ARG_mask].u_obj, ARG_IMAGE_MUTABLE | ARG_IMAGE_ALLOC);
+    }
 
-    imlib_morph(arg_img, arg_ksize, arg_krn, arg_mul, arg_add, arg_threshold, arg_offset, arg_invert, arg_msk);
+    float mul = py_helper_arg_to_float(args[ARG_mul].u_obj, 1.0f);
+    float add = py_helper_arg_to_float(args[ARG_add].u_obj, 0.0f);
+
+    imlib_morph(image, ksize, krn, mul / sum, add, args[ARG_threshold].u_bool,
+                args[ARG_offset].u_int, args[ARG_invert].u_bool, mask);
     fb_alloc_free_till_mark();
-    return args[0];
+    return pos_args[0];
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_laplacian_obj, 2, py_image_laplacian);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_laplacian_obj, 2, py_image_laplacian);
 #endif // IMLIB_ENABLE_LAPLACIAN
 
 #ifdef IMLIB_ENABLE_BILATERAL
-STATIC mp_obj_t py_image_bilateral(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
+static mp_obj_t py_image_bilateral(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
     image_t *arg_img =
-        py_helper_arg_to_image_mutable(args[0]);
+        py_helper_arg_to_image(args[0], ARG_IMAGE_MUTABLE);
     int arg_ksize =
         py_helper_arg_to_ksize(args[1]);
     float arg_color_sigma =
@@ -2767,49 +2489,25 @@ STATIC mp_obj_t py_image_bilateral(uint n_args, const mp_obj_t *args, mp_map_t *
     bool arg_invert =
         py_helper_keyword_int(n_args, args, 6, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_invert), false);
     image_t *arg_msk =
-        py_helper_keyword_to_image_mutable_mask(n_args, args, 7, kw_args);
+        py_helper_keyword_to_image(n_args, args, 7, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_mask), NULL);
 
     fb_alloc_mark();
-    imlib_bilateral_filter(arg_img, arg_ksize, arg_color_sigma, arg_space_sigma, arg_threshold, arg_offset, arg_invert, arg_msk);
+    imlib_bilateral_filter(arg_img, arg_ksize, arg_color_sigma, arg_space_sigma, arg_threshold, arg_offset, arg_invert,
+                           arg_msk);
     fb_alloc_free_till_mark();
     return args[0];
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_bilateral_obj, 2, py_image_bilateral);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_bilateral_obj, 2, py_image_bilateral);
 #endif // IMLIB_ENABLE_BILATERAL
-
-#ifdef IMLIB_ENABLE_CARTOON
-STATIC mp_obj_t py_image_cartoon(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    image_t *arg_img =
-        py_helper_arg_to_image_mutable(args[0]);
-    float arg_seed_threshold =
-        py_helper_keyword_float(n_args, args, 1, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_seed_threshold), 0.05);
-    PY_ASSERT_TRUE_MSG((0.0f <= arg_seed_threshold) && (arg_seed_threshold <= 1.0f),
-                       "Error: 0.0 <= seed_threshold <= 1.0!");
-    float arg_floating_threshold =
-        py_helper_keyword_float(n_args, args, 2, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_floating_threshold), 0.05);
-    PY_ASSERT_TRUE_MSG((0.0f <= arg_floating_threshold) && (arg_floating_threshold <= 1.0f),
-                       "Error: 0.0 <= floating_threshold <= 1.0!");
-    image_t *arg_msk =
-        py_helper_keyword_to_image_mutable_mask(n_args, args, 3, kw_args);
-
-    fb_alloc_mark();
-    imlib_cartoon_filter(arg_img, arg_seed_threshold, arg_floating_threshold, arg_msk);
-    fb_alloc_free_till_mark();
-    return args[0];
-}
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_cartoon_obj, 1, py_image_cartoon);
-#endif // IMLIB_ENABLE_CARTOON
 
 ////////////////////
 // Geometric Methods
 ////////////////////
 
 #ifdef IMLIB_ENABLE_LINPOLAR
-static mp_obj_t py_image_linpolar(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
+static mp_obj_t py_image_linpolar(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
     image_t *arg_img =
-        py_helper_arg_to_image_mutable(args[0]);
+        py_helper_arg_to_image(args[0], ARG_IMAGE_MUTABLE);
     PY_ASSERT_FALSE_MSG(arg_img->w % 2, "Width must be even!");
     PY_ASSERT_FALSE_MSG(arg_img->h % 2, "Height must be even!");
     bool arg_reverse =
@@ -2820,14 +2518,13 @@ static mp_obj_t py_image_linpolar(uint n_args, const mp_obj_t *args, mp_map_t *k
     fb_alloc_free_till_mark();
     return args[0];
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_linpolar_obj, 1, py_image_linpolar);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_linpolar_obj, 1, py_image_linpolar);
 #endif // IMLIB_ENABLE_LINPOLAR
 
 #ifdef IMLIB_ENABLE_LOGPOLAR
-static mp_obj_t py_image_logpolar(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
+static mp_obj_t py_image_logpolar(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
     image_t *arg_img =
-        py_helper_arg_to_image_mutable(args[0]);
+        py_helper_arg_to_image(args[0], ARG_IMAGE_MUTABLE);
     PY_ASSERT_FALSE_MSG(arg_img->w % 2, "Width must be even!");
     PY_ASSERT_FALSE_MSG(arg_img->h % 2, "Height must be even!");
     bool arg_reverse =
@@ -2838,14 +2535,13 @@ static mp_obj_t py_image_logpolar(uint n_args, const mp_obj_t *args, mp_map_t *k
     fb_alloc_free_till_mark();
     return args[0];
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_logpolar_obj, 1, py_image_logpolar);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_logpolar_obj, 1, py_image_logpolar);
 #endif // IMLIB_ENABLE_LOGPOLAR
 
 #ifdef IMLIB_ENABLE_LENS_CORR
-STATIC mp_obj_t py_image_lens_corr(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
+static mp_obj_t py_image_lens_corr(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
     image_t *arg_img =
-        py_helper_arg_to_image_mutable(args[0]);
+        py_helper_arg_to_image(args[0], ARG_IMAGE_MUTABLE);
     PY_ASSERT_FALSE_MSG(arg_img->w % 2, "Width must be even!");
     PY_ASSERT_FALSE_MSG(arg_img->h % 2, "Height must be even!");
     float arg_strength =
@@ -2865,14 +2561,13 @@ STATIC mp_obj_t py_image_lens_corr(uint n_args, const mp_obj_t *args, mp_map_t *
     fb_alloc_free_till_mark();
     return args[0];
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_lens_corr_obj, 1, py_image_lens_corr);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_lens_corr_obj, 1, py_image_lens_corr);
 #endif // IMLIB_ENABLE_LENS_CORR
 
 #ifdef IMLIB_ENABLE_ROTATION_CORR
-STATIC mp_obj_t py_image_rotation_corr(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
+static mp_obj_t py_image_rotation_corr(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
     image_t *arg_img =
-        py_helper_arg_to_image_mutable(args[0]);
+        py_helper_arg_to_image(args[0], ARG_IMAGE_MUTABLE);
     float arg_x_rotation =
         IM_DEG2RAD(py_helper_keyword_float(n_args, args, 1, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_x_rotation), 0.0f));
     float arg_y_rotation =
@@ -2899,7 +2594,7 @@ STATIC mp_obj_t py_image_rotation_corr(uint n_args, const mp_obj_t *args, mp_map
     fb_alloc_free_till_mark();
     return args[0];
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_rotation_corr_obj, 1, py_image_rotation_corr);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_rotation_corr_obj, 1, py_image_rotation_corr);
 #endif // IMLIB_ENABLE_ROTATION_CORR
 
 //////////////
@@ -2908,14 +2603,13 @@ STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_rotation_corr_obj, 1, py_image_rotati
 
 #ifdef IMLIB_ENABLE_GET_SIMILARITY
 // Similarity Object //
-#define py_similarity_obj_size 4
+#define py_similarity_obj_size    4
 typedef struct py_similarity_obj {
     mp_obj_base_t base;
     mp_obj_t avg, std, min, max;
 } py_similarity_obj_t;
 
-static void py_similarity_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind)
-{
+static void py_similarity_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind) {
     py_similarity_obj_t *self = self_in;
     mp_printf(print,
               "{\"mean\":%f, \"stdev\":%f, \"min\":%f, \"max\":%f}",
@@ -2925,9 +2619,9 @@ static void py_similarity_print(const mp_print_t *print, mp_obj_t self_in, mp_pr
               (double) mp_obj_get_float(self->max));
 }
 
-static mp_obj_t py_similarity_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t value)
-{
-    if (value == MP_OBJ_SENTINEL) { // load
+static mp_obj_t py_similarity_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t value) {
+    if (value == MP_OBJ_SENTINEL) {
+        // load
         py_similarity_obj_t *self = self_in;
         if (MP_OBJ_IS_TYPE(index, &mp_type_slice)) {
             mp_bound_slice_t slice;
@@ -2948,52 +2642,95 @@ static mp_obj_t py_similarity_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t 
     return MP_OBJ_NULL; // op not supported
 }
 
-mp_obj_t py_similarity_mean(mp_obj_t self_in) { return ((py_similarity_obj_t *) self_in)->avg; }
-mp_obj_t py_similarity_stdev(mp_obj_t self_in) { return ((py_similarity_obj_t *) self_in)->std; }
-mp_obj_t py_similarity_min(mp_obj_t self_in) { return ((py_similarity_obj_t *) self_in)->min; }
-mp_obj_t py_similarity_max(mp_obj_t self_in) { return ((py_similarity_obj_t *) self_in)->max; }
+mp_obj_t py_similarity_mean(mp_obj_t self_in) {
+    return ((py_similarity_obj_t *) self_in)->avg;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_similarity_mean_obj, py_similarity_mean);
 
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_similarity_mean_obj, py_similarity_mean);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_similarity_stdev_obj, py_similarity_stdev);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_similarity_min_obj, py_similarity_min);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_similarity_max_obj, py_similarity_max);
+mp_obj_t py_similarity_stdev(mp_obj_t self_in) {
+    return ((py_similarity_obj_t *) self_in)->std;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_similarity_stdev_obj, py_similarity_stdev);
 
-STATIC const mp_rom_map_elem_t py_similarity_locals_dict_table[] = {
+mp_obj_t py_similarity_min(mp_obj_t self_in) {
+    return ((py_similarity_obj_t *) self_in)->min;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_similarity_min_obj, py_similarity_min);
+
+mp_obj_t py_similarity_max(mp_obj_t self_in) {
+    return ((py_similarity_obj_t *) self_in)->max;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_similarity_max_obj, py_similarity_max);
+
+static const mp_rom_map_elem_t py_similarity_locals_dict_table[] = {
     { MP_ROM_QSTR(MP_QSTR_mean), MP_ROM_PTR(&py_similarity_mean_obj) },
     { MP_ROM_QSTR(MP_QSTR_stdev), MP_ROM_PTR(&py_similarity_stdev_obj) },
     { MP_ROM_QSTR(MP_QSTR_min), MP_ROM_PTR(&py_similarity_min_obj) },
     { MP_ROM_QSTR(MP_QSTR_max), MP_ROM_PTR(&py_similarity_max_obj) }
 };
 
-STATIC MP_DEFINE_CONST_DICT(py_similarity_locals_dict, py_similarity_locals_dict_table);
+static MP_DEFINE_CONST_DICT(py_similarity_locals_dict, py_similarity_locals_dict_table);
 
-static const mp_obj_type_t py_similarity_type = {
-    { &mp_type_type },
-    .name  = MP_QSTR_similarity,
-    .print = py_similarity_print,
-    .subscr = py_similarity_subscr,
-    .locals_dict = (mp_obj_t) &py_similarity_locals_dict
-};
+static MP_DEFINE_CONST_OBJ_TYPE(
+    py_similarity_type,
+    MP_QSTR_similarity,
+    MP_TYPE_FLAG_NONE,
+    print, py_similarity_print,
+    subscr, py_similarity_subscr,
+    locals_dict, &py_similarity_locals_dict
+    );
 
-static mp_obj_t py_image_get_similarity(mp_obj_t img_obj, mp_obj_t other_obj)
-{
-    image_t *arg_img = py_helper_arg_to_image_mutable(img_obj);
-    float avg, std, min, max;
+static mp_obj_t py_image_get_similarity(uint n_args, const mp_obj_t *pos_args, mp_map_t *kw_args) {
+    enum {
+        ARG_image, ARG_x, ARG_y, ARG_x_scale, ARG_y_scale, ARG_roi,
+        ARG_channel, ARG_alpha, ARG_color_palette, ARG_alpha_palette, ARG_hint, ARG_dssim
+    };
+    static const mp_arg_t allowed_args[] = {
+        { MP_QSTR_image, MP_ARG_OBJ | MP_ARG_REQUIRED, {.u_rom_obj = MP_ROM_NONE} },
+        { MP_QSTR_x, MP_ARG_INT,  {.u_int = 0 } },
+        { MP_QSTR_y, MP_ARG_INT,  {.u_int = 0 } },
+        { MP_QSTR_x_scale, MP_ARG_OBJ | MP_ARG_KW_ONLY, {.u_rom_obj = MP_ROM_NONE} },
+        { MP_QSTR_y_scale, MP_ARG_OBJ | MP_ARG_KW_ONLY, {.u_rom_obj = MP_ROM_NONE} },
+        { MP_QSTR_roi, MP_ARG_OBJ | MP_ARG_KW_ONLY, {.u_rom_obj = MP_ROM_NONE} },
+        { MP_QSTR_rgb_channel, MP_ARG_INT | MP_ARG_KW_ONLY,  {.u_int = -1 } },
+        { MP_QSTR_alpha, MP_ARG_INT | MP_ARG_KW_ONLY,  {.u_int = 255 } },
+        { MP_QSTR_color_palette, MP_ARG_OBJ | MP_ARG_KW_ONLY, {.u_rom_obj = MP_ROM_NONE} },
+        { MP_QSTR_alpha_palette, MP_ARG_OBJ | MP_ARG_KW_ONLY, {.u_rom_obj = MP_ROM_NONE} },
+        { MP_QSTR_hint, MP_ARG_INT | MP_ARG_KW_ONLY,  {.u_int = 0 } },
+        { MP_QSTR_dssim, MP_ARG_BOOL | MP_ARG_KW_ONLY, {.u_bool = false } },
+    };
+
+    // Parse args.
+    image_t *image = py_helper_arg_to_image(pos_args[0], ARG_IMAGE_MUTABLE);
+    mp_arg_val_t args[MP_ARRAY_SIZE(allowed_args)];
+    mp_arg_parse_all(n_args - 1, pos_args + 1, kw_args, MP_ARRAY_SIZE(allowed_args), allowed_args, args);
 
     fb_alloc_mark();
+    image_t *other = py_helper_arg_to_image(args[ARG_image].u_obj, ARG_IMAGE_ANY | ARG_IMAGE_ALLOC);
+    rectangle_t roi = py_helper_arg_to_roi(args[ARG_roi].u_obj, other);
 
-    if (MP_OBJ_IS_STR(other_obj)) {
-        imlib_get_similarity(arg_img, mp_obj_str_get_str(other_obj), NULL, 0, &avg, &std, &min, &max);
-    } else if (MP_OBJ_IS_TYPE(other_obj, &py_image_type)) {
-        imlib_get_similarity(arg_img, NULL, py_helper_arg_to_image_mutable(other_obj), 0, &avg, &std, &min, &max);
-    } else {
-        imlib_get_similarity(arg_img, NULL, NULL,
-                             py_helper_keyword_color(arg_img, 1, &other_obj, 0, NULL, 0),
-                             &avg, &std, &min, &max);
+    if (args[ARG_channel].u_int < -1 || args[ARG_channel].u_int > 2) {
+        mp_raise_msg(&mp_type_ValueError, MP_ERROR_TEXT("RGB channel can be 0, 1, or 2"));
     }
 
-    fb_alloc_free_till_mark();
+    if (args[ARG_alpha].u_int < 0 || args[ARG_alpha].u_int > 255) {
+        mp_raise_msg(&mp_type_ValueError, MP_ERROR_TEXT("Alpha ranges between 0 and 255"));
+    }
 
+    float x_scale = 1.0f;
+    float y_scale = 1.0f;
+    py_helper_arg_to_scale(args[ARG_x_scale].u_obj, args[ARG_y_scale].u_obj, &x_scale, &y_scale);
+
+    const uint16_t *color_palette = py_helper_arg_to_palette(args[ARG_color_palette].u_obj, PIXFORMAT_RGB565);
+    const uint8_t *alpha_palette = py_helper_arg_to_palette(args[ARG_alpha_palette].u_obj, PIXFORMAT_GRAYSCALE);
+
+    float avg = 0.0f, std = 0.0f, min = 0.0f, max = 0.0f;
+    imlib_get_similarity(image, other, args[ARG_x].u_int, args[ARG_y].u_int, x_scale, y_scale, &roi,
+                         args[ARG_channel].u_int, args[ARG_alpha].u_int, color_palette, alpha_palette,
+                         args[ARG_hint].u_int | IMAGE_HINT_BLACK_BACKGROUND, args[ARG_dssim].u_bool,
+                         &avg, &std, &min, &max);
+
+    fb_alloc_free_till_mark();
     py_similarity_obj_t *o = m_new_obj(py_similarity_obj_t);
     o->base.type = &py_similarity_type;
     o->avg = mp_obj_new_float(avg);
@@ -3002,25 +2739,25 @@ static mp_obj_t py_image_get_similarity(mp_obj_t img_obj, mp_obj_t other_obj)
     o->max = mp_obj_new_float(max);
     return o;
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_2(py_image_get_similarity_obj, py_image_get_similarity);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_get_similarity_obj, 1, py_image_get_similarity);
 #endif // IMLIB_ENABLE_GET_SIMILARITY
 
 // Statistics Object //
-#define py_statistics_obj_size 24
+#define py_statistics_obj_size    24
 typedef struct py_statistics_obj {
     mp_obj_base_t base;
     pixformat_t pixfmt;
     mp_obj_t LMean, LMedian, LMode, LSTDev, LMin, LMax, LLQ, LUQ,
-        AMean, AMedian, AMode, ASTDev, AMin, AMax, ALQ, AUQ,
-        BMean, BMedian, BMode, BSTDev, BMin, BMax, BLQ, BUQ;
+             AMean, AMedian, AMode, ASTDev, AMin, AMax, ALQ, AUQ,
+             BMean, BMedian, BMode, BSTDev, BMin, BMax, BLQ, BUQ;
 } py_statistics_obj_t;
 
-static void py_statistics_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind)
-{
+static void py_statistics_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind) {
     py_statistics_obj_t *self = self_in;
     switch (self->pixfmt) {
         case PIXFORMAT_BINARY: {
-            mp_printf(print, "{\"mean\":%d, \"median\":%d, \"mode\":%d, \"stdev\":%d, \"min\":%d, \"max\":%d, \"lq\":%d, \"uq\":%d}",
+            mp_printf(print,
+                      "{\"mean\":%d, \"median\":%d, \"mode\":%d, \"stdev\":%d, \"min\":%d, \"max\":%d, \"lq\":%d, \"uq\":%d}",
                       mp_obj_get_int(self->LMean),
                       mp_obj_get_int(self->LMedian),
                       mp_obj_get_int(self->LMode),
@@ -3032,7 +2769,8 @@ static void py_statistics_print(const mp_print_t *print, mp_obj_t self_in, mp_pr
             break;
         }
         case PIXFORMAT_GRAYSCALE: {
-            mp_printf(print, "{\"mean\":%d, \"median\":%d, \"mode\":%d, \"stdev\":%d, \"min\":%d, \"max\":%d, \"lq\":%d, \"uq\":%d}",
+            mp_printf(print,
+                      "{\"mean\":%d, \"median\":%d, \"mode\":%d, \"stdev\":%d, \"min\":%d, \"max\":%d, \"lq\":%d, \"uq\":%d}",
                       mp_obj_get_int(self->LMean),
                       mp_obj_get_int(self->LMedian),
                       mp_obj_get_int(self->LMode),
@@ -3044,9 +2782,10 @@ static void py_statistics_print(const mp_print_t *print, mp_obj_t self_in, mp_pr
             break;
         }
         case PIXFORMAT_RGB565: {
-            mp_printf(print, "{\"l_mean\":%d, \"l_median\":%d, \"l_mode\":%d, \"l_stdev\":%d, \"l_min\":%d, \"l_max\":%d, \"l_lq\":%d, \"l_uq\":%d,"
-                             " \"a_mean\":%d, \"a_median\":%d, \"a_mode\":%d, \"a_stdev\":%d, \"a_min\":%d, \"a_max\":%d, \"a_lq\":%d, \"a_uq\":%d,"
-                             " \"b_mean\":%d, \"b_median\":%d, \"b_mode\":%d, \"b_stdev\":%d, \"b_min\":%d, \"b_max\":%d, \"b_lq\":%d, \"b_uq\":%d}",
+            mp_printf(print,
+                      "{\"l_mean\":%d, \"l_median\":%d, \"l_mode\":%d, \"l_stdev\":%d, \"l_min\":%d, \"l_max\":%d, \"l_lq\":%d, \"l_uq\":%d,"
+                      " \"a_mean\":%d, \"a_median\":%d, \"a_mode\":%d, \"a_stdev\":%d, \"a_min\":%d, \"a_max\":%d, \"a_lq\":%d, \"a_uq\":%d,"
+                      " \"b_mean\":%d, \"b_median\":%d, \"b_mode\":%d, \"b_stdev\":%d, \"b_min\":%d, \"b_max\":%d, \"b_lq\":%d, \"b_uq\":%d}",
                       mp_obj_get_int(self->LMean),
                       mp_obj_get_int(self->LMedian),
                       mp_obj_get_int(self->LMode),
@@ -3080,9 +2819,9 @@ static void py_statistics_print(const mp_print_t *print, mp_obj_t self_in, mp_pr
     }
 }
 
-static mp_obj_t py_statistics_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t value)
-{
-    if (value == MP_OBJ_SENTINEL) { // load
+static mp_obj_t py_statistics_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t value) {
+    if (value == MP_OBJ_SENTINEL) {
+        // load
         py_statistics_obj_t *self = self_in;
         if (MP_OBJ_IS_TYPE(index, &mp_type_slice)) {
             mp_bound_slice_t slice;
@@ -3123,73 +2862,167 @@ static mp_obj_t py_statistics_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t 
     return MP_OBJ_NULL; // op not supported
 }
 
-mp_obj_t py_statistics_mean(mp_obj_t self_in) { return ((py_statistics_obj_t *) self_in)->LMean; }
-mp_obj_t py_statistics_median(mp_obj_t self_in) { return ((py_statistics_obj_t *) self_in)->LMedian; }
-mp_obj_t py_statistics_mode(mp_obj_t self_in) { return ((py_statistics_obj_t *) self_in)->LMode; }
-mp_obj_t py_statistics_stdev(mp_obj_t self_in) { return ((py_statistics_obj_t *) self_in)->LSTDev; }
-mp_obj_t py_statistics_min(mp_obj_t self_in) { return ((py_statistics_obj_t *) self_in)->LMin; }
-mp_obj_t py_statistics_max(mp_obj_t self_in) { return ((py_statistics_obj_t *) self_in)->LMax; }
-mp_obj_t py_statistics_lq(mp_obj_t self_in) { return ((py_statistics_obj_t *) self_in)->LLQ; }
-mp_obj_t py_statistics_uq(mp_obj_t self_in) { return ((py_statistics_obj_t *) self_in)->LUQ; }
-mp_obj_t py_statistics_l_mean(mp_obj_t self_in) { return ((py_statistics_obj_t *) self_in)->LMean; }
-mp_obj_t py_statistics_l_median(mp_obj_t self_in) { return ((py_statistics_obj_t *) self_in)->LMedian; }
-mp_obj_t py_statistics_l_mode(mp_obj_t self_in) { return ((py_statistics_obj_t *) self_in)->LMode; }
-mp_obj_t py_statistics_l_stdev(mp_obj_t self_in) { return ((py_statistics_obj_t *) self_in)->LSTDev; }
-mp_obj_t py_statistics_l_min(mp_obj_t self_in) { return ((py_statistics_obj_t *) self_in)->LMin; }
-mp_obj_t py_statistics_l_max(mp_obj_t self_in) { return ((py_statistics_obj_t *) self_in)->LMax; }
-mp_obj_t py_statistics_l_lq(mp_obj_t self_in) { return ((py_statistics_obj_t *) self_in)->LLQ; }
-mp_obj_t py_statistics_l_uq(mp_obj_t self_in) { return ((py_statistics_obj_t *) self_in)->LUQ; }
-mp_obj_t py_statistics_a_mean(mp_obj_t self_in) { return ((py_statistics_obj_t *) self_in)->AMean; }
-mp_obj_t py_statistics_a_median(mp_obj_t self_in) { return ((py_statistics_obj_t *) self_in)->AMedian; }
-mp_obj_t py_statistics_a_mode(mp_obj_t self_in) { return ((py_statistics_obj_t *) self_in)->AMode; }
-mp_obj_t py_statistics_a_stdev(mp_obj_t self_in) { return ((py_statistics_obj_t *) self_in)->ASTDev; }
-mp_obj_t py_statistics_a_min(mp_obj_t self_in) { return ((py_statistics_obj_t *) self_in)->AMin; }
-mp_obj_t py_statistics_a_max(mp_obj_t self_in) { return ((py_statistics_obj_t *) self_in)->AMax; }
-mp_obj_t py_statistics_a_lq(mp_obj_t self_in) { return ((py_statistics_obj_t *) self_in)->ALQ; }
-mp_obj_t py_statistics_a_uq(mp_obj_t self_in) { return ((py_statistics_obj_t *) self_in)->AUQ; }
-mp_obj_t py_statistics_b_mean(mp_obj_t self_in) { return ((py_statistics_obj_t *) self_in)->BMean; }
-mp_obj_t py_statistics_b_median(mp_obj_t self_in) { return ((py_statistics_obj_t *) self_in)->BMedian; }
-mp_obj_t py_statistics_b_mode(mp_obj_t self_in) { return ((py_statistics_obj_t *) self_in)->BMode; }
-mp_obj_t py_statistics_b_stdev(mp_obj_t self_in) { return ((py_statistics_obj_t *) self_in)->BSTDev; }
-mp_obj_t py_statistics_b_min(mp_obj_t self_in) { return ((py_statistics_obj_t *) self_in)->BMin; }
-mp_obj_t py_statistics_b_max(mp_obj_t self_in) { return ((py_statistics_obj_t *) self_in)->BMax; }
-mp_obj_t py_statistics_b_lq(mp_obj_t self_in) { return ((py_statistics_obj_t *) self_in)->BLQ; }
-mp_obj_t py_statistics_b_uq(mp_obj_t self_in) { return ((py_statistics_obj_t *) self_in)->BUQ; }
+mp_obj_t py_statistics_mean(mp_obj_t self_in) {
+    return ((py_statistics_obj_t *) self_in)->LMean;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_statistics_mean_obj, py_statistics_mean);
 
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_statistics_mean_obj, py_statistics_mean);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_statistics_median_obj, py_statistics_median);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_statistics_mode_obj, py_statistics_mode);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_statistics_stdev_obj, py_statistics_stdev);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_statistics_min_obj, py_statistics_min);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_statistics_max_obj, py_statistics_max);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_statistics_lq_obj, py_statistics_lq);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_statistics_uq_obj, py_statistics_uq);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_statistics_l_mean_obj, py_statistics_l_mean);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_statistics_l_median_obj, py_statistics_l_median);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_statistics_l_mode_obj, py_statistics_l_mode);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_statistics_l_stdev_obj, py_statistics_l_stdev);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_statistics_l_min_obj, py_statistics_l_min);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_statistics_l_max_obj, py_statistics_l_max);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_statistics_l_lq_obj, py_statistics_l_lq);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_statistics_l_uq_obj, py_statistics_l_uq);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_statistics_a_mean_obj, py_statistics_a_mean);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_statistics_a_median_obj, py_statistics_a_median);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_statistics_a_mode_obj, py_statistics_a_mode);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_statistics_a_stdev_obj, py_statistics_a_stdev);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_statistics_a_min_obj, py_statistics_a_min);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_statistics_a_max_obj, py_statistics_a_max);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_statistics_a_lq_obj, py_statistics_a_lq);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_statistics_a_uq_obj, py_statistics_a_uq);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_statistics_b_mean_obj, py_statistics_b_mean);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_statistics_b_median_obj, py_statistics_b_median);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_statistics_b_mode_obj, py_statistics_b_mode);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_statistics_b_stdev_obj, py_statistics_b_stdev);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_statistics_b_min_obj, py_statistics_b_min);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_statistics_b_max_obj, py_statistics_b_max);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_statistics_b_lq_obj, py_statistics_b_lq);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_statistics_b_uq_obj, py_statistics_b_uq);
+mp_obj_t py_statistics_median(mp_obj_t self_in) {
+    return ((py_statistics_obj_t *) self_in)->LMedian;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_statistics_median_obj, py_statistics_median);
 
-STATIC const mp_rom_map_elem_t py_statistics_locals_dict_table[] = {
+mp_obj_t py_statistics_mode(mp_obj_t self_in) {
+    return ((py_statistics_obj_t *) self_in)->LMode;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_statistics_mode_obj, py_statistics_mode);
+
+mp_obj_t py_statistics_stdev(mp_obj_t self_in) {
+    return ((py_statistics_obj_t *) self_in)->LSTDev;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_statistics_stdev_obj, py_statistics_stdev);
+
+mp_obj_t py_statistics_min(mp_obj_t self_in) {
+    return ((py_statistics_obj_t *) self_in)->LMin;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_statistics_min_obj, py_statistics_min);
+
+mp_obj_t py_statistics_max(mp_obj_t self_in) {
+    return ((py_statistics_obj_t *) self_in)->LMax;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_statistics_max_obj, py_statistics_max);
+
+mp_obj_t py_statistics_lq(mp_obj_t self_in) {
+    return ((py_statistics_obj_t *) self_in)->LLQ;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_statistics_lq_obj, py_statistics_lq);
+
+mp_obj_t py_statistics_uq(mp_obj_t self_in) {
+    return ((py_statistics_obj_t *) self_in)->LUQ;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_statistics_uq_obj, py_statistics_uq);
+
+mp_obj_t py_statistics_l_mean(mp_obj_t self_in) {
+    return ((py_statistics_obj_t *) self_in)->LMean;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_statistics_l_mean_obj, py_statistics_l_mean);
+
+mp_obj_t py_statistics_l_median(mp_obj_t self_in) {
+    return ((py_statistics_obj_t *) self_in)->LMedian;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_statistics_l_median_obj, py_statistics_l_median);
+
+mp_obj_t py_statistics_l_mode(mp_obj_t self_in) {
+    return ((py_statistics_obj_t *) self_in)->LMode;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_statistics_l_mode_obj, py_statistics_l_mode);
+
+mp_obj_t py_statistics_l_stdev(mp_obj_t self_in) {
+    return ((py_statistics_obj_t *) self_in)->LSTDev;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_statistics_l_stdev_obj, py_statistics_l_stdev);
+
+mp_obj_t py_statistics_l_min(mp_obj_t self_in) {
+    return ((py_statistics_obj_t *) self_in)->LMin;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_statistics_l_min_obj, py_statistics_l_min);
+
+mp_obj_t py_statistics_l_max(mp_obj_t self_in) {
+    return ((py_statistics_obj_t *) self_in)->LMax;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_statistics_l_max_obj, py_statistics_l_max);
+
+mp_obj_t py_statistics_l_lq(mp_obj_t self_in) {
+    return ((py_statistics_obj_t *) self_in)->LLQ;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_statistics_l_lq_obj, py_statistics_l_lq);
+
+mp_obj_t py_statistics_l_uq(mp_obj_t self_in) {
+    return ((py_statistics_obj_t *) self_in)->LUQ;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_statistics_l_uq_obj, py_statistics_l_uq);
+
+mp_obj_t py_statistics_a_mean(mp_obj_t self_in) {
+    return ((py_statistics_obj_t *) self_in)->AMean;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_statistics_a_mean_obj, py_statistics_a_mean);
+
+mp_obj_t py_statistics_a_median(mp_obj_t self_in) {
+    return ((py_statistics_obj_t *) self_in)->AMedian;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_statistics_a_median_obj, py_statistics_a_median);
+
+mp_obj_t py_statistics_a_mode(mp_obj_t self_in) {
+    return ((py_statistics_obj_t *) self_in)->AMode;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_statistics_a_mode_obj, py_statistics_a_mode);
+
+mp_obj_t py_statistics_a_stdev(mp_obj_t self_in) {
+    return ((py_statistics_obj_t *) self_in)->ASTDev;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_statistics_a_stdev_obj, py_statistics_a_stdev);
+
+mp_obj_t py_statistics_a_min(mp_obj_t self_in) {
+    return ((py_statistics_obj_t *) self_in)->AMin;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_statistics_a_min_obj, py_statistics_a_min);
+
+mp_obj_t py_statistics_a_max(mp_obj_t self_in) {
+    return ((py_statistics_obj_t *) self_in)->AMax;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_statistics_a_max_obj, py_statistics_a_max);
+
+mp_obj_t py_statistics_a_lq(mp_obj_t self_in) {
+    return ((py_statistics_obj_t *) self_in)->ALQ;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_statistics_a_lq_obj, py_statistics_a_lq);
+
+mp_obj_t py_statistics_a_uq(mp_obj_t self_in) {
+    return ((py_statistics_obj_t *) self_in)->AUQ;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_statistics_a_uq_obj, py_statistics_a_uq);
+
+mp_obj_t py_statistics_b_mean(mp_obj_t self_in) {
+    return ((py_statistics_obj_t *) self_in)->BMean;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_statistics_b_mean_obj, py_statistics_b_mean);
+
+mp_obj_t py_statistics_b_median(mp_obj_t self_in) {
+    return ((py_statistics_obj_t *) self_in)->BMedian;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_statistics_b_median_obj, py_statistics_b_median);
+
+mp_obj_t py_statistics_b_mode(mp_obj_t self_in) {
+    return ((py_statistics_obj_t *) self_in)->BMode;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_statistics_b_mode_obj, py_statistics_b_mode);
+
+mp_obj_t py_statistics_b_stdev(mp_obj_t self_in) {
+    return ((py_statistics_obj_t *) self_in)->BSTDev;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_statistics_b_stdev_obj, py_statistics_b_stdev);
+
+mp_obj_t py_statistics_b_min(mp_obj_t self_in) {
+    return ((py_statistics_obj_t *) self_in)->BMin;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_statistics_b_min_obj, py_statistics_b_min);
+
+mp_obj_t py_statistics_b_max(mp_obj_t self_in) {
+    return ((py_statistics_obj_t *) self_in)->BMax;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_statistics_b_max_obj, py_statistics_b_max);
+
+mp_obj_t py_statistics_b_lq(mp_obj_t self_in) {
+    return ((py_statistics_obj_t *) self_in)->BLQ;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_statistics_b_lq_obj, py_statistics_b_lq);
+
+mp_obj_t py_statistics_b_uq(mp_obj_t self_in) {
+    return ((py_statistics_obj_t *) self_in)->BUQ;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_statistics_b_uq_obj, py_statistics_b_uq);
+
+static const mp_rom_map_elem_t py_statistics_locals_dict_table[] = {
     { MP_ROM_QSTR(MP_QSTR_mean), MP_ROM_PTR(&py_statistics_mean_obj) },
     { MP_ROM_QSTR(MP_QSTR_median), MP_ROM_PTR(&py_statistics_median_obj) },
     { MP_ROM_QSTR(MP_QSTR_mode), MP_ROM_PTR(&py_statistics_mode_obj) },
@@ -3224,26 +3057,26 @@ STATIC const mp_rom_map_elem_t py_statistics_locals_dict_table[] = {
     { MP_ROM_QSTR(MP_QSTR_b_uq), MP_ROM_PTR(&py_statistics_b_uq_obj) }
 };
 
-STATIC MP_DEFINE_CONST_DICT(py_statistics_locals_dict, py_statistics_locals_dict_table);
+static MP_DEFINE_CONST_DICT(py_statistics_locals_dict, py_statistics_locals_dict_table);
 
-static const mp_obj_type_t py_statistics_type = {
-    { &mp_type_type },
-    .name  = MP_QSTR_statistics,
-    .print = py_statistics_print,
-    .subscr = py_statistics_subscr,
-    .locals_dict = (mp_obj_t) &py_statistics_locals_dict
-};
+static MP_DEFINE_CONST_OBJ_TYPE(
+    py_statistics_type,
+    MP_QSTR_statistics,
+    MP_TYPE_FLAG_NONE,
+    print, py_statistics_print,
+    subscr, py_statistics_subscr,
+    locals_dict, &py_statistics_locals_dict
+    );
 
 // Percentile Object //
-#define py_percentile_obj_size 3
+#define py_percentile_obj_size    3
 typedef struct py_percentile_obj {
     mp_obj_base_t base;
     pixformat_t pixfmt;
     mp_obj_t LValue, AValue, BValue;
 } py_percentile_obj_t;
 
-static void py_percentile_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind)
-{
+static void py_percentile_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind) {
     py_percentile_obj_t *self = self_in;
     switch (self->pixfmt) {
         case PIXFORMAT_BINARY: {
@@ -3270,9 +3103,9 @@ static void py_percentile_print(const mp_print_t *print, mp_obj_t self_in, mp_pr
     }
 }
 
-static mp_obj_t py_percentile_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t value)
-{
-    if (value == MP_OBJ_SENTINEL) { // load
+static mp_obj_t py_percentile_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t value) {
+    if (value == MP_OBJ_SENTINEL) {
+        // load
         py_percentile_obj_t *self = self_in;
         if (MP_OBJ_IS_TYPE(index, &mp_type_slice)) {
             mp_bound_slice_t slice;
@@ -3292,43 +3125,53 @@ static mp_obj_t py_percentile_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t 
     return MP_OBJ_NULL; // op not supported
 }
 
-mp_obj_t py_percentile_value(mp_obj_t self_in) { return ((py_percentile_obj_t *) self_in)->LValue; }
-mp_obj_t py_percentile_l_value(mp_obj_t self_in) { return ((py_percentile_obj_t *) self_in)->LValue; }
-mp_obj_t py_percentile_a_value(mp_obj_t self_in) { return ((py_percentile_obj_t *) self_in)->AValue; }
-mp_obj_t py_percentile_b_value(mp_obj_t self_in) { return ((py_percentile_obj_t *) self_in)->BValue; }
+mp_obj_t py_percentile_value(mp_obj_t self_in) {
+    return ((py_percentile_obj_t *) self_in)->LValue;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_percentile_value_obj, py_percentile_value);
 
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_percentile_value_obj, py_percentile_value);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_percentile_l_value_obj, py_percentile_l_value);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_percentile_a_value_obj, py_percentile_a_value);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_percentile_b_value_obj, py_percentile_b_value);
+mp_obj_t py_percentile_l_value(mp_obj_t self_in) {
+    return ((py_percentile_obj_t *) self_in)->LValue;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_percentile_l_value_obj, py_percentile_l_value);
 
-STATIC const mp_rom_map_elem_t py_percentile_locals_dict_table[] = {
+mp_obj_t py_percentile_a_value(mp_obj_t self_in) {
+    return ((py_percentile_obj_t *) self_in)->AValue;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_percentile_a_value_obj, py_percentile_a_value);
+
+mp_obj_t py_percentile_b_value(mp_obj_t self_in) {
+    return ((py_percentile_obj_t *) self_in)->BValue;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_percentile_b_value_obj, py_percentile_b_value);
+
+static const mp_rom_map_elem_t py_percentile_locals_dict_table[] = {
     { MP_ROM_QSTR(MP_QSTR_value), MP_ROM_PTR(&py_percentile_value_obj) },
     { MP_ROM_QSTR(MP_QSTR_l_value), MP_ROM_PTR(&py_percentile_l_value_obj) },
     { MP_ROM_QSTR(MP_QSTR_a_value), MP_ROM_PTR(&py_percentile_a_value_obj) },
     { MP_ROM_QSTR(MP_QSTR_b_value), MP_ROM_PTR(&py_percentile_b_value_obj) }
 };
 
-STATIC MP_DEFINE_CONST_DICT(py_percentile_locals_dict, py_percentile_locals_dict_table);
+static MP_DEFINE_CONST_DICT(py_percentile_locals_dict, py_percentile_locals_dict_table);
 
-static const mp_obj_type_t py_percentile_type = {
-    { &mp_type_type },
-    .name  = MP_QSTR_percentile,
-    .print = py_percentile_print,
-    .subscr = py_percentile_subscr,
-    .locals_dict = (mp_obj_t) &py_percentile_locals_dict
-};
+static MP_DEFINE_CONST_OBJ_TYPE(
+    py_percentile_type,
+    MP_QSTR_percentile,
+    MP_TYPE_FLAG_NONE,
+    print, py_percentile_print,
+    subscr, py_percentile_subscr,
+    locals_dict, &py_percentile_locals_dict
+    );
 
 // Threshold Object //
-#define py_threshold_obj_size 3
+#define py_threshold_obj_size    3
 typedef struct py_threshold_obj {
     mp_obj_base_t base;
     pixformat_t pixfmt;
     mp_obj_t LValue, AValue, BValue;
 } py_threshold_obj_t;
 
-static void py_threshold_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind)
-{
+static void py_threshold_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind) {
     py_threshold_obj_t *self = self_in;
     switch (self->pixfmt) {
         case PIXFORMAT_BINARY: {
@@ -3355,9 +3198,9 @@ static void py_threshold_print(const mp_print_t *print, mp_obj_t self_in, mp_pri
     }
 }
 
-static mp_obj_t py_threshold_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t value)
-{
-    if (value == MP_OBJ_SENTINEL) { // load
+static mp_obj_t py_threshold_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t value) {
+    if (value == MP_OBJ_SENTINEL) {
+        // load
         py_threshold_obj_t *self = self_in;
         if (MP_OBJ_IS_TYPE(index, &mp_type_slice)) {
             mp_bound_slice_t slice;
@@ -3377,43 +3220,53 @@ static mp_obj_t py_threshold_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t v
     return MP_OBJ_NULL; // op not supported
 }
 
-mp_obj_t py_threshold_value(mp_obj_t self_in) { return ((py_threshold_obj_t *) self_in)->LValue; }
-mp_obj_t py_threshold_l_value(mp_obj_t self_in) { return ((py_threshold_obj_t *) self_in)->LValue; }
-mp_obj_t py_threshold_a_value(mp_obj_t self_in) { return ((py_threshold_obj_t *) self_in)->AValue; }
-mp_obj_t py_threshold_b_value(mp_obj_t self_in) { return ((py_threshold_obj_t *) self_in)->BValue; }
+mp_obj_t py_threshold_value(mp_obj_t self_in) {
+    return ((py_threshold_obj_t *) self_in)->LValue;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_threshold_value_obj, py_threshold_value);
 
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_threshold_value_obj, py_threshold_value);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_threshold_l_value_obj, py_threshold_l_value);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_threshold_a_value_obj, py_threshold_a_value);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_threshold_b_value_obj, py_threshold_b_value);
+mp_obj_t py_threshold_l_value(mp_obj_t self_in) {
+    return ((py_threshold_obj_t *) self_in)->LValue;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_threshold_l_value_obj, py_threshold_l_value);
 
-STATIC const mp_rom_map_elem_t py_threshold_locals_dict_table[] = {
+mp_obj_t py_threshold_a_value(mp_obj_t self_in) {
+    return ((py_threshold_obj_t *) self_in)->AValue;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_threshold_a_value_obj, py_threshold_a_value);
+
+mp_obj_t py_threshold_b_value(mp_obj_t self_in) {
+    return ((py_threshold_obj_t *) self_in)->BValue;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_threshold_b_value_obj, py_threshold_b_value);
+
+static const mp_rom_map_elem_t py_threshold_locals_dict_table[] = {
     { MP_ROM_QSTR(MP_QSTR_value), MP_ROM_PTR(&py_threshold_value_obj) },
     { MP_ROM_QSTR(MP_QSTR_l_value), MP_ROM_PTR(&py_threshold_l_value_obj) },
     { MP_ROM_QSTR(MP_QSTR_a_value), MP_ROM_PTR(&py_threshold_a_value_obj) },
     { MP_ROM_QSTR(MP_QSTR_b_value), MP_ROM_PTR(&py_threshold_b_value_obj) }
 };
 
-STATIC MP_DEFINE_CONST_DICT(py_threshold_locals_dict, py_threshold_locals_dict_table);
+static MP_DEFINE_CONST_DICT(py_threshold_locals_dict, py_threshold_locals_dict_table);
 
-static const mp_obj_type_t py_threshold_type = {
-    { &mp_type_type },
-    .name  = MP_QSTR_threshold,
-    .print = py_threshold_print,
-    .subscr = py_threshold_subscr,
-    .locals_dict = (mp_obj_t) &py_threshold_locals_dict
-};
+static MP_DEFINE_CONST_OBJ_TYPE(
+    py_threshold_type,
+    MP_QSTR_threshold,
+    MP_TYPE_FLAG_NONE,
+    print, py_threshold_print,
+    subscr, py_threshold_subscr,
+    locals_dict, &py_threshold_locals_dict
+    );
 
 // Histogram Object //
-#define py_histogram_obj_size 3
+#define py_histogram_obj_size    3
 typedef struct py_histogram_obj {
     mp_obj_base_t base;
     pixformat_t pixfmt;
     mp_obj_t LBins, ABins, BBins;
 } py_histogram_obj_t;
 
-static void py_histogram_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind)
-{
+static void py_histogram_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind) {
     py_histogram_obj_t *self = self_in;
     switch (self->pixfmt) {
         case PIXFORMAT_BINARY: {
@@ -3445,9 +3298,9 @@ static void py_histogram_print(const mp_print_t *print, mp_obj_t self_in, mp_pri
     }
 }
 
-static mp_obj_t py_histogram_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t value)
-{
-    if (value == MP_OBJ_SENTINEL) { // load
+static mp_obj_t py_histogram_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t value) {
+    if (value == MP_OBJ_SENTINEL) {
+        // load
         py_histogram_obj_t *self = self_in;
         if (MP_OBJ_IS_TYPE(index, &mp_type_slice)) {
             mp_bound_slice_t slice;
@@ -3467,13 +3320,27 @@ static mp_obj_t py_histogram_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t v
     return MP_OBJ_NULL; // op not supported
 }
 
-mp_obj_t py_histogram_bins(mp_obj_t self_in) { return ((py_histogram_obj_t *) self_in)->LBins; }
-mp_obj_t py_histogram_l_bins(mp_obj_t self_in) { return ((py_histogram_obj_t *) self_in)->LBins; }
-mp_obj_t py_histogram_a_bins(mp_obj_t self_in) { return ((py_histogram_obj_t *) self_in)->ABins; }
-mp_obj_t py_histogram_b_bins(mp_obj_t self_in) { return ((py_histogram_obj_t *) self_in)->BBins; }
+mp_obj_t py_histogram_bins(mp_obj_t self_in) {
+    return ((py_histogram_obj_t *) self_in)->LBins;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_histogram_bins_obj, py_histogram_bins);
 
-mp_obj_t py_histogram_get_percentile(mp_obj_t self_in, mp_obj_t percentile)
-{
+mp_obj_t py_histogram_l_bins(mp_obj_t self_in) {
+    return ((py_histogram_obj_t *) self_in)->LBins;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_histogram_l_bins_obj, py_histogram_l_bins);
+
+mp_obj_t py_histogram_a_bins(mp_obj_t self_in) {
+    return ((py_histogram_obj_t *) self_in)->ABins;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_histogram_a_bins_obj, py_histogram_a_bins);
+
+mp_obj_t py_histogram_b_bins(mp_obj_t self_in) {
+    return ((py_histogram_obj_t *) self_in)->BBins;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_histogram_b_bins_obj, py_histogram_b_bins);
+
+mp_obj_t py_histogram_get_percentile(mp_obj_t self_in, mp_obj_t percentile) {
     histogram_t hist;
     hist.LBinCount = ((mp_obj_list_t *) ((py_histogram_obj_t *) self_in)->LBins)->len;
     hist.ABinCount = ((mp_obj_list_t *) ((py_histogram_obj_t *) self_in)->ABins)->len;
@@ -3509,9 +3376,9 @@ mp_obj_t py_histogram_get_percentile(mp_obj_t self_in, mp_obj_t percentile)
 
     return o;
 }
+static MP_DEFINE_CONST_FUN_OBJ_2(py_histogram_get_percentile_obj, py_histogram_get_percentile);
 
-mp_obj_t py_histogram_get_threshold(mp_obj_t self_in)
-{
+mp_obj_t py_histogram_get_threshold(mp_obj_t self_in) {
     histogram_t hist;
     hist.LBinCount = ((mp_obj_list_t *) ((py_histogram_obj_t *) self_in)->LBins)->len;
     hist.ABinCount = ((mp_obj_list_t *) ((py_histogram_obj_t *) self_in)->ABins)->len;
@@ -3547,9 +3414,9 @@ mp_obj_t py_histogram_get_threshold(mp_obj_t self_in)
 
     return o;
 }
+static MP_DEFINE_CONST_FUN_OBJ_1(py_histogram_get_threshold_obj, py_histogram_get_threshold);
 
-mp_obj_t py_histogram_get_statistics(mp_obj_t self_in)
-{
+mp_obj_t py_histogram_get_statistics(mp_obj_t self_in) {
     histogram_t hist;
     hist.LBinCount = ((mp_obj_list_t *) ((py_histogram_obj_t *) self_in)->LBins)->len;
     hist.ABinCount = ((mp_obj_list_t *) ((py_histogram_obj_t *) self_in)->ABins)->len;
@@ -3581,7 +3448,7 @@ mp_obj_t py_histogram_get_statistics(mp_obj_t self_in)
 
     o->LMean = mp_obj_new_int(stats.LMean);
     o->LMedian = mp_obj_new_int(stats.LMedian);
-    o->LMode= mp_obj_new_int(stats.LMode);
+    o->LMode = mp_obj_new_int(stats.LMode);
     o->LSTDev = mp_obj_new_int(stats.LSTDev);
     o->LMin = mp_obj_new_int(stats.LMin);
     o->LMax = mp_obj_new_int(stats.LMax);
@@ -3589,7 +3456,7 @@ mp_obj_t py_histogram_get_statistics(mp_obj_t self_in)
     o->LUQ = mp_obj_new_int(stats.LUQ);
     o->AMean = mp_obj_new_int(stats.AMean);
     o->AMedian = mp_obj_new_int(stats.AMedian);
-    o->AMode= mp_obj_new_int(stats.AMode);
+    o->AMode = mp_obj_new_int(stats.AMode);
     o->ASTDev = mp_obj_new_int(stats.ASTDev);
     o->AMin = mp_obj_new_int(stats.AMin);
     o->AMax = mp_obj_new_int(stats.AMax);
@@ -3597,7 +3464,7 @@ mp_obj_t py_histogram_get_statistics(mp_obj_t self_in)
     o->AUQ = mp_obj_new_int(stats.AUQ);
     o->BMean = mp_obj_new_int(stats.BMean);
     o->BMedian = mp_obj_new_int(stats.BMedian);
-    o->BMode= mp_obj_new_int(stats.BMode);
+    o->BMode = mp_obj_new_int(stats.BMode);
     o->BSTDev = mp_obj_new_int(stats.BSTDev);
     o->BMin = mp_obj_new_int(stats.BMin);
     o->BMax = mp_obj_new_int(stats.BMax);
@@ -3606,16 +3473,9 @@ mp_obj_t py_histogram_get_statistics(mp_obj_t self_in)
 
     return o;
 }
+static MP_DEFINE_CONST_FUN_OBJ_1(py_histogram_get_statistics_obj, py_histogram_get_statistics);
 
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_histogram_bins_obj, py_histogram_bins);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_histogram_l_bins_obj, py_histogram_l_bins);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_histogram_a_bins_obj, py_histogram_a_bins);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_histogram_b_bins_obj, py_histogram_b_bins);
-STATIC MP_DEFINE_CONST_FUN_OBJ_2(py_histogram_get_percentile_obj, py_histogram_get_percentile);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_histogram_get_threshold_obj, py_histogram_get_threshold);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_histogram_get_statistics_obj, py_histogram_get_statistics);
-
-STATIC const mp_rom_map_elem_t py_histogram_locals_dict_table[] = {
+static const mp_rom_map_elem_t py_histogram_locals_dict_table[] = {
     { MP_ROM_QSTR(MP_QSTR_bins), MP_ROM_PTR(&py_histogram_bins_obj) },
     { MP_ROM_QSTR(MP_QSTR_l_bins), MP_ROM_PTR(&py_histogram_l_bins_obj) },
     { MP_ROM_QSTR(MP_QSTR_a_bins), MP_ROM_PTR(&py_histogram_a_bins_obj) },
@@ -3627,25 +3487,25 @@ STATIC const mp_rom_map_elem_t py_histogram_locals_dict_table[] = {
     { MP_ROM_QSTR(MP_QSTR_statistics), MP_ROM_PTR(&py_histogram_get_statistics_obj) }
 };
 
-STATIC MP_DEFINE_CONST_DICT(py_histogram_locals_dict, py_histogram_locals_dict_table);
+static MP_DEFINE_CONST_DICT(py_histogram_locals_dict, py_histogram_locals_dict_table);
 
-static const mp_obj_type_t py_histogram_type = {
-    { &mp_type_type },
-    .name  = MP_QSTR_histogram,
-    .print = py_histogram_print,
-    .subscr = py_histogram_subscr,
-    .locals_dict = (mp_obj_t) &py_histogram_locals_dict
-};
+static MP_DEFINE_CONST_OBJ_TYPE(
+    py_histogram_type,
+    MP_QSTR_histogram,
+    MP_TYPE_FLAG_NONE,
+    print, py_histogram_print,
+    subscr, py_histogram_subscr,
+    locals_dict, &py_histogram_locals_dict
+    );
 
-static mp_obj_t py_image_get_histogram(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    image_t *arg_img = py_helper_arg_to_image_mutable(args[0]);
+static mp_obj_t py_image_get_histogram(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
+    image_t *arg_img = py_helper_arg_to_image(args[0], ARG_IMAGE_MUTABLE);
 
     list_t thresholds;
     list_init(&thresholds, sizeof(color_thresholds_list_lnk_data_t));
     py_helper_keyword_thresholds(n_args, args, 1, kw_args, &thresholds);
     bool invert = py_helper_keyword_int(n_args, args, 2, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_invert), false);
-    image_t *other = py_helper_keyword_to_image_mutable(n_args, args, 3, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_difference), NULL);
+    image_t *other = py_helper_keyword_to_image(n_args, args, 3, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_difference), NULL);
 
     rectangle_t roi;
     py_helper_keyword_rectangle_roi(arg_img, n_args, args, 3, kw_args, &roi);
@@ -3654,7 +3514,7 @@ static mp_obj_t py_image_get_histogram(uint n_args, const mp_obj_t *args, mp_map
     switch (arg_img->pixfmt) {
         case PIXFORMAT_BINARY: {
             int bins = py_helper_keyword_int(n_args, args, n_args, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_bins),
-                                             (COLOR_BINARY_MAX-COLOR_BINARY_MIN+1));
+                                             (COLOR_BINARY_MAX - COLOR_BINARY_MIN + 1));
             PY_ASSERT_TRUE_MSG(bins >= 2, "bins must be >= 2");
             hist.LBinCount = py_helper_keyword_int(n_args, args, n_args, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_l_bins), bins);
             PY_ASSERT_TRUE_MSG(hist.LBinCount >= 2, "l_bins must be >= 2");
@@ -3670,7 +3530,7 @@ static mp_obj_t py_image_get_histogram(uint n_args, const mp_obj_t *args, mp_map
         }
         case PIXFORMAT_GRAYSCALE: {
             int bins = py_helper_keyword_int(n_args, args, n_args, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_bins),
-                                             (COLOR_GRAYSCALE_MAX-COLOR_GRAYSCALE_MIN+1));
+                                             (COLOR_GRAYSCALE_MAX - COLOR_GRAYSCALE_MIN + 1));
             PY_ASSERT_TRUE_MSG(bins >= 2, "bins must be >= 2");
             hist.LBinCount = py_helper_keyword_int(n_args, args, n_args, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_l_bins), bins);
             PY_ASSERT_TRUE_MSG(hist.LBinCount >= 2, "l_bins must be >= 2");
@@ -3686,17 +3546,17 @@ static mp_obj_t py_image_get_histogram(uint n_args, const mp_obj_t *args, mp_map
         }
         case PIXFORMAT_RGB565: {
             int l_bins = py_helper_keyword_int(n_args, args, n_args, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_bins),
-                                               (COLOR_L_MAX-COLOR_L_MIN+1));
+                                               (COLOR_L_MAX - COLOR_L_MIN + 1));
             PY_ASSERT_TRUE_MSG(l_bins >= 2, "bins must be >= 2");
             hist.LBinCount = py_helper_keyword_int(n_args, args, n_args, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_l_bins), l_bins);
             PY_ASSERT_TRUE_MSG(hist.LBinCount >= 2, "l_bins must be >= 2");
             int a_bins = py_helper_keyword_int(n_args, args, n_args, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_bins),
-                                               (COLOR_A_MAX-COLOR_A_MIN+1));
+                                               (COLOR_A_MAX - COLOR_A_MIN + 1));
             PY_ASSERT_TRUE_MSG(a_bins >= 2, "bins must be >= 2");
             hist.ABinCount = py_helper_keyword_int(n_args, args, n_args, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_a_bins), a_bins);
             PY_ASSERT_TRUE_MSG(hist.ABinCount >= 2, "a_bins must be >= 2");
             int b_bins = py_helper_keyword_int(n_args, args, n_args, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_bins),
-                                               (COLOR_B_MAX-COLOR_B_MIN+1));
+                                               (COLOR_B_MAX - COLOR_B_MIN + 1));
             PY_ASSERT_TRUE_MSG(b_bins >= 2, "bins must be >= 2");
             hist.BBinCount = py_helper_keyword_int(n_args, args, n_args, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_b_bins), b_bins);
             PY_ASSERT_TRUE_MSG(hist.BBinCount >= 2, "b_bins must be >= 2");
@@ -3737,17 +3597,16 @@ static mp_obj_t py_image_get_histogram(uint n_args, const mp_obj_t *args, mp_map
 
     return o;
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_get_histogram_obj, 1, py_image_get_histogram);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_get_histogram_obj, 1, py_image_get_histogram);
 
-static mp_obj_t py_image_get_statistics(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    image_t *arg_img = py_helper_arg_to_image_mutable(args[0]);
+static mp_obj_t py_image_get_statistics(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
+    image_t *arg_img = py_helper_arg_to_image(args[0], ARG_IMAGE_MUTABLE);
 
     list_t thresholds;
     list_init(&thresholds, sizeof(color_thresholds_list_lnk_data_t));
     py_helper_keyword_thresholds(n_args, args, 1, kw_args, &thresholds);
     bool invert = py_helper_keyword_int(n_args, args, 2, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_invert), false);
-    image_t *other = py_helper_keyword_to_image_mutable(n_args, args, 3, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_difference), NULL);
+    image_t *other = py_helper_keyword_to_image(n_args, args, 3, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_difference), NULL);
 
     rectangle_t roi;
     py_helper_keyword_rectangle_roi(arg_img, n_args, args, 3, kw_args, &roi);
@@ -3756,7 +3615,7 @@ static mp_obj_t py_image_get_statistics(uint n_args, const mp_obj_t *args, mp_ma
     switch (arg_img->pixfmt) {
         case PIXFORMAT_BINARY: {
             int bins = py_helper_keyword_int(n_args, args, n_args, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_bins),
-                                             (COLOR_BINARY_MAX-COLOR_BINARY_MIN+1));
+                                             (COLOR_BINARY_MAX - COLOR_BINARY_MIN + 1));
             PY_ASSERT_TRUE_MSG(bins >= 2, "bins must be >= 2");
             hist.LBinCount = py_helper_keyword_int(n_args, args, n_args, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_l_bins), bins);
             PY_ASSERT_TRUE_MSG(hist.LBinCount >= 2, "l_bins must be >= 2");
@@ -3772,7 +3631,7 @@ static mp_obj_t py_image_get_statistics(uint n_args, const mp_obj_t *args, mp_ma
         }
         case PIXFORMAT_GRAYSCALE: {
             int bins = py_helper_keyword_int(n_args, args, n_args, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_bins),
-                                             (COLOR_GRAYSCALE_MAX-COLOR_GRAYSCALE_MIN+1));
+                                             (COLOR_GRAYSCALE_MAX - COLOR_GRAYSCALE_MIN + 1));
             PY_ASSERT_TRUE_MSG(bins >= 2, "bins must be >= 2");
             hist.LBinCount = py_helper_keyword_int(n_args, args, n_args, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_l_bins), bins);
             PY_ASSERT_TRUE_MSG(hist.LBinCount >= 2, "l_bins must be >= 2");
@@ -3788,17 +3647,17 @@ static mp_obj_t py_image_get_statistics(uint n_args, const mp_obj_t *args, mp_ma
         }
         case PIXFORMAT_RGB565: {
             int l_bins = py_helper_keyword_int(n_args, args, n_args, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_bins),
-                                               (COLOR_L_MAX-COLOR_L_MIN+1));
+                                               (COLOR_L_MAX - COLOR_L_MIN + 1));
             PY_ASSERT_TRUE_MSG(l_bins >= 2, "bins must be >= 2");
             hist.LBinCount = py_helper_keyword_int(n_args, args, n_args, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_l_bins), l_bins);
             PY_ASSERT_TRUE_MSG(hist.LBinCount >= 2, "l_bins must be >= 2");
             int a_bins = py_helper_keyword_int(n_args, args, n_args, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_bins),
-                                               (COLOR_A_MAX-COLOR_A_MIN+1));
+                                               (COLOR_A_MAX - COLOR_A_MIN + 1));
             PY_ASSERT_TRUE_MSG(a_bins >= 2, "bins must be >= 2");
             hist.ABinCount = py_helper_keyword_int(n_args, args, n_args, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_a_bins), a_bins);
             PY_ASSERT_TRUE_MSG(hist.ABinCount >= 2, "a_bins must be >= 2");
             int b_bins = py_helper_keyword_int(n_args, args, n_args, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_bins),
-                                               (COLOR_B_MAX-COLOR_B_MIN+1));
+                                               (COLOR_B_MAX - COLOR_B_MIN + 1));
             PY_ASSERT_TRUE_MSG(b_bins >= 2, "bins must be >= 2");
             hist.BBinCount = py_helper_keyword_int(n_args, args, n_args, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_b_bins), b_bins);
             PY_ASSERT_TRUE_MSG(hist.BBinCount >= 2, "b_bins must be >= 2");
@@ -3825,7 +3684,7 @@ static mp_obj_t py_image_get_statistics(uint n_args, const mp_obj_t *args, mp_ma
 
     o->LMean = mp_obj_new_int(stats.LMean);
     o->LMedian = mp_obj_new_int(stats.LMedian);
-    o->LMode= mp_obj_new_int(stats.LMode);
+    o->LMode = mp_obj_new_int(stats.LMode);
     o->LSTDev = mp_obj_new_int(stats.LSTDev);
     o->LMin = mp_obj_new_int(stats.LMin);
     o->LMax = mp_obj_new_int(stats.LMax);
@@ -3833,7 +3692,7 @@ static mp_obj_t py_image_get_statistics(uint n_args, const mp_obj_t *args, mp_ma
     o->LUQ = mp_obj_new_int(stats.LUQ);
     o->AMean = mp_obj_new_int(stats.AMean);
     o->AMedian = mp_obj_new_int(stats.AMedian);
-    o->AMode= mp_obj_new_int(stats.AMode);
+    o->AMode = mp_obj_new_int(stats.AMode);
     o->ASTDev = mp_obj_new_int(stats.ASTDev);
     o->AMin = mp_obj_new_int(stats.AMin);
     o->AMax = mp_obj_new_int(stats.AMax);
@@ -3841,7 +3700,7 @@ static mp_obj_t py_image_get_statistics(uint n_args, const mp_obj_t *args, mp_ma
     o->AUQ = mp_obj_new_int(stats.AUQ);
     o->BMean = mp_obj_new_int(stats.BMean);
     o->BMedian = mp_obj_new_int(stats.BMedian);
-    o->BMode= mp_obj_new_int(stats.BMode);
+    o->BMode = mp_obj_new_int(stats.BMode);
     o->BSTDev = mp_obj_new_int(stats.BSTDev);
     o->BMin = mp_obj_new_int(stats.BMin);
     o->BMax = mp_obj_new_int(stats.BMax);
@@ -3850,17 +3709,16 @@ static mp_obj_t py_image_get_statistics(uint n_args, const mp_obj_t *args, mp_ma
 
     return o;
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_get_statistics_obj, 1, py_image_get_statistics);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_get_statistics_obj, 1, py_image_get_statistics);
 
 // Line Object //
-#define py_line_obj_size 8
+#define py_line_obj_size    8
 typedef struct py_line_obj {
     mp_obj_base_t base;
     mp_obj_t x1, y1, x2, y2, length, magnitude, theta, rho;
 } py_line_obj_t;
 
-static void py_line_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind)
-{
+static void py_line_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind) {
     py_line_obj_t *self = self_in;
     mp_printf(print,
               "{\"x1\":%d, \"y1\":%d, \"x2\":%d, \"y2\":%d, \"length\":%d, \"magnitude\":%d, \"theta\":%d, \"rho\":%d}",
@@ -3874,9 +3732,9 @@ static void py_line_print(const mp_print_t *print, mp_obj_t self_in, mp_print_ki
               mp_obj_get_int(self->rho));
 }
 
-static mp_obj_t py_line_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t value)
-{
-    if (value == MP_OBJ_SENTINEL) { // load
+static mp_obj_t py_line_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t value) {
+    if (value == MP_OBJ_SENTINEL) {
+        // load
         py_line_obj_t *self = self_in;
         if (MP_OBJ_IS_TYPE(index, &mp_type_slice)) {
             mp_bound_slice_t slice;
@@ -3901,34 +3759,55 @@ static mp_obj_t py_line_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t value)
     return MP_OBJ_NULL; // op not supported
 }
 
-mp_obj_t py_line_line(mp_obj_t self_in)
-{
+mp_obj_t py_line_line(mp_obj_t self_in) {
     return mp_obj_new_tuple(4, (mp_obj_t []) {((py_line_obj_t *) self_in)->x1,
                                               ((py_line_obj_t *) self_in)->y1,
                                               ((py_line_obj_t *) self_in)->x2,
                                               ((py_line_obj_t *) self_in)->y2});
 }
+static MP_DEFINE_CONST_FUN_OBJ_1(py_line_line_obj, py_line_line);
 
-mp_obj_t py_line_x1(mp_obj_t self_in) { return ((py_line_obj_t *) self_in)->x1; }
-mp_obj_t py_line_y1(mp_obj_t self_in) { return ((py_line_obj_t *) self_in)->y1; }
-mp_obj_t py_line_x2(mp_obj_t self_in) { return ((py_line_obj_t *) self_in)->x2; }
-mp_obj_t py_line_y2(mp_obj_t self_in) { return ((py_line_obj_t *) self_in)->y2; }
-mp_obj_t py_line_length(mp_obj_t self_in) { return ((py_line_obj_t *) self_in)->length; }
-mp_obj_t py_line_magnitude(mp_obj_t self_in) { return ((py_line_obj_t *) self_in)->magnitude; }
-mp_obj_t py_line_theta(mp_obj_t self_in) { return ((py_line_obj_t *) self_in)->theta; }
-mp_obj_t py_line_rho(mp_obj_t self_in) { return ((py_line_obj_t *) self_in)->rho; }
+mp_obj_t py_line_x1(mp_obj_t self_in) {
+    return ((py_line_obj_t *) self_in)->x1;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_line_x1_obj, py_line_x1);
 
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_line_line_obj, py_line_line);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_line_x1_obj, py_line_x1);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_line_y1_obj, py_line_y1);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_line_x2_obj, py_line_x2);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_line_y2_obj, py_line_y2);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_line_length_obj, py_line_length);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_line_magnitude_obj, py_line_magnitude);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_line_theta_obj, py_line_theta);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_line_rho_obj, py_line_rho);
+mp_obj_t py_line_y1(mp_obj_t self_in) {
+    return ((py_line_obj_t *) self_in)->y1;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_line_y1_obj, py_line_y1);
 
-STATIC const mp_rom_map_elem_t py_line_locals_dict_table[] = {
+mp_obj_t py_line_x2(mp_obj_t self_in) {
+    return ((py_line_obj_t *) self_in)->x2;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_line_x2_obj, py_line_x2);
+
+mp_obj_t py_line_y2(mp_obj_t self_in) {
+    return ((py_line_obj_t *) self_in)->y2;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_line_y2_obj, py_line_y2);
+
+mp_obj_t py_line_length(mp_obj_t self_in) {
+    return ((py_line_obj_t *) self_in)->length;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_line_length_obj, py_line_length);
+
+mp_obj_t py_line_magnitude(mp_obj_t self_in) {
+    return ((py_line_obj_t *) self_in)->magnitude;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_line_magnitude_obj, py_line_magnitude);
+
+mp_obj_t py_line_theta(mp_obj_t self_in) {
+    return ((py_line_obj_t *) self_in)->theta;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_line_theta_obj, py_line_theta);
+
+mp_obj_t py_line_rho(mp_obj_t self_in) {
+    return ((py_line_obj_t *) self_in)->rho;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_line_rho_obj, py_line_rho);
+
+static const mp_rom_map_elem_t py_line_locals_dict_table[] = {
     { MP_ROM_QSTR(MP_QSTR_line), MP_ROM_PTR(&py_line_line_obj) },
     { MP_ROM_QSTR(MP_QSTR_x1), MP_ROM_PTR(&py_line_x1_obj) },
     { MP_ROM_QSTR(MP_QSTR_y1), MP_ROM_PTR(&py_line_y1_obj) },
@@ -3940,24 +3819,26 @@ STATIC const mp_rom_map_elem_t py_line_locals_dict_table[] = {
     { MP_ROM_QSTR(MP_QSTR_rho), MP_ROM_PTR(&py_line_rho_obj) }
 };
 
-STATIC MP_DEFINE_CONST_DICT(py_line_locals_dict, py_line_locals_dict_table);
+static MP_DEFINE_CONST_DICT(py_line_locals_dict, py_line_locals_dict_table);
 
-static const mp_obj_type_t py_line_type = {
-    { &mp_type_type },
-    .name  = MP_QSTR_line,
-    .print = py_line_print,
-    .subscr = py_line_subscr,
-    .locals_dict = (mp_obj_t) &py_line_locals_dict
-};
+static MP_DEFINE_CONST_OBJ_TYPE(
+    py_line_type,
+    MP_QSTR_line,
+    MP_TYPE_FLAG_NONE,
+    print, py_line_print,
+    subscr, py_line_subscr,
+    locals_dict, &py_line_locals_dict
+    );
 
-static mp_obj_t py_image_get_regression(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    image_t *arg_img = py_helper_arg_to_image_mutable(args[0]);
+static mp_obj_t py_image_get_regression(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
+    image_t *arg_img = py_helper_arg_to_image(args[0], ARG_IMAGE_MUTABLE);
 
     list_t thresholds;
     list_init(&thresholds, sizeof(color_thresholds_list_lnk_data_t));
     py_helper_arg_to_thresholds(args[1], &thresholds);
-    if (!list_size(&thresholds)) return mp_const_none;
+    if (!list_size(&thresholds)) {
+        return mp_const_none;
+    }
     bool invert = py_helper_keyword_int(n_args, args, 2, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_invert), false);
 
     rectangle_t roi;
@@ -3968,13 +3849,18 @@ static mp_obj_t py_image_get_regression(uint n_args, const mp_obj_t *args, mp_ma
     unsigned int y_stride = py_helper_keyword_int(n_args, args, 5, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_y_stride), 1);
     PY_ASSERT_TRUE_MSG(y_stride > 0, "y_stride must not be zero.");
     unsigned int area_threshold = py_helper_keyword_int(n_args, args, 6, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_area_threshold), 10);
-    unsigned int pixels_threshold = py_helper_keyword_int(n_args, args, 7, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_pixels_threshold), 10);
+    unsigned int pixels_threshold = py_helper_keyword_int(n_args,
+                                                          args,
+                                                          7,
+                                                          kw_args,
+                                                          MP_OBJ_NEW_QSTR(MP_QSTR_pixels_threshold),
+                                                          10);
     bool robust = py_helper_keyword_int(n_args, args, 8, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_robust), false);
 
     find_lines_list_lnk_data_t out;
     fb_alloc_mark();
     bool result = imlib_get_regression(&out, arg_img, &roi, x_stride,
-            y_stride, &thresholds, invert, area_threshold, pixels_threshold, robust);
+                                       y_stride, &thresholds, invert, area_threshold, pixels_threshold, robust);
     fb_alloc_free_till_mark();
     list_free(&thresholds);
     if (!result) {
@@ -3996,14 +3882,14 @@ static mp_obj_t py_image_get_regression(uint n_args, const mp_obj_t *args, mp_ma
 
     return o;
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_get_regression_obj, 2, py_image_get_regression);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_get_regression_obj, 2, py_image_get_regression);
 
 ///////////////
 // Find Methods
 ///////////////
 
 // Blob Object //
-#define py_blob_obj_size 12
+#define py_blob_obj_size    12
 typedef struct py_blob_obj {
     mp_obj_base_t base;
     mp_obj_t corners;
@@ -4013,8 +3899,7 @@ typedef struct py_blob_obj {
     mp_obj_t y_hist_bins;
 } py_blob_obj_t;
 
-static void py_blob_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind)
-{
+static void py_blob_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind) {
     py_blob_obj_t *self = self_in;
     mp_printf(print,
               "{\"x\":%d, \"y\":%d, \"w\":%d, \"h\":%d,"
@@ -4034,9 +3919,9 @@ static void py_blob_print(const mp_print_t *print, mp_obj_t self_in, mp_print_ki
               (double) mp_obj_get_float(self->roundness));
 }
 
-static mp_obj_t py_blob_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t value)
-{
-    if (value == MP_OBJ_SENTINEL) { // load
+static mp_obj_t py_blob_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t value) {
+    if (value == MP_OBJ_SENTINEL) {
+        // load
         py_blob_obj_t *self = self_in;
         if (MP_OBJ_IS_TYPE(index, &mp_type_slice)) {
             mp_bound_slice_t slice;
@@ -4065,41 +3950,121 @@ static mp_obj_t py_blob_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t value)
     return MP_OBJ_NULL; // op not supported
 }
 
-mp_obj_t py_blob_corners(mp_obj_t self_in) { return ((py_blob_obj_t *) self_in)->corners; }
-mp_obj_t py_blob_min_corners(mp_obj_t self_in) { return ((py_blob_obj_t *) self_in)->min_corners; }
-mp_obj_t py_blob_rect(mp_obj_t self_in)
-{
+mp_obj_t py_blob_corners(mp_obj_t self_in) {
+    return ((py_blob_obj_t *) self_in)->corners;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_blob_corners_obj, py_blob_corners);
+
+mp_obj_t py_blob_min_corners(mp_obj_t self_in) {
+    return ((py_blob_obj_t *) self_in)->min_corners;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_blob_min_corners_obj, py_blob_min_corners);
+
+mp_obj_t py_blob_rect(mp_obj_t self_in) {
     return mp_obj_new_tuple(4, (mp_obj_t []) {((py_blob_obj_t *) self_in)->x,
                                               ((py_blob_obj_t *) self_in)->y,
                                               ((py_blob_obj_t *) self_in)->w,
                                               ((py_blob_obj_t *) self_in)->h});
 }
+static MP_DEFINE_CONST_FUN_OBJ_1(py_blob_rect_obj, py_blob_rect);
 
-mp_obj_t py_blob_x(mp_obj_t self_in) { return ((py_blob_obj_t *) self_in)->x; }
-mp_obj_t py_blob_y(mp_obj_t self_in) { return ((py_blob_obj_t *) self_in)->y; }
-mp_obj_t py_blob_w(mp_obj_t self_in) { return ((py_blob_obj_t *) self_in)->w; }
-mp_obj_t py_blob_h(mp_obj_t self_in) { return ((py_blob_obj_t *) self_in)->h; }
-mp_obj_t py_blob_pixels(mp_obj_t self_in) { return ((py_blob_obj_t *) self_in)->pixels; }
-mp_obj_t py_blob_cx(mp_obj_t self_in) { return mp_obj_new_int(fast_roundf(mp_obj_get_float(((py_blob_obj_t *) self_in)->cx))); }
-mp_obj_t py_blob_cxf(mp_obj_t self_in) { return ((py_blob_obj_t *) self_in)->cx; }
-mp_obj_t py_blob_cy(mp_obj_t self_in) { return mp_obj_new_int(fast_roundf(mp_obj_get_float(((py_blob_obj_t *) self_in)->cy))); }
-mp_obj_t py_blob_cyf(mp_obj_t self_in) { return ((py_blob_obj_t *) self_in)->cy; }
-mp_obj_t py_blob_rotation(mp_obj_t self_in) { return ((py_blob_obj_t *) self_in)->rotation; }
-mp_obj_t py_blob_rotation_deg(mp_obj_t self_in) { return mp_obj_new_int(IM_RAD2DEG(mp_obj_get_float(((py_blob_obj_t *) self_in)->rotation))); }
-mp_obj_t py_blob_rotation_rad(mp_obj_t self_in) { return ((py_blob_obj_t *) self_in)->rotation; }
-mp_obj_t py_blob_code(mp_obj_t self_in) { return ((py_blob_obj_t *) self_in)->code; }
-mp_obj_t py_blob_count(mp_obj_t self_in) { return ((py_blob_obj_t *) self_in)->count; }
-mp_obj_t py_blob_perimeter(mp_obj_t self_in) { return ((py_blob_obj_t *) self_in)->perimeter; }
-mp_obj_t py_blob_roundness(mp_obj_t self_in) { return ((py_blob_obj_t *) self_in)->roundness; }
-mp_obj_t py_blob_elongation(mp_obj_t self_in) { return mp_obj_new_float(1 - mp_obj_get_float(((py_blob_obj_t *) self_in)->roundness)); }
+mp_obj_t py_blob_x(mp_obj_t self_in) {
+    return ((py_blob_obj_t *) self_in)->x;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_blob_x_obj, py_blob_x);
+
+mp_obj_t py_blob_y(mp_obj_t self_in) {
+    return ((py_blob_obj_t *) self_in)->y;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_blob_y_obj, py_blob_y);
+
+mp_obj_t py_blob_w(mp_obj_t self_in) {
+    return ((py_blob_obj_t *) self_in)->w;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_blob_w_obj, py_blob_w);
+
+mp_obj_t py_blob_h(mp_obj_t self_in) {
+    return ((py_blob_obj_t *) self_in)->h;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_blob_h_obj, py_blob_h);
+
+mp_obj_t py_blob_pixels(mp_obj_t self_in) {
+    return ((py_blob_obj_t *) self_in)->pixels;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_blob_pixels_obj, py_blob_pixels);
+
+mp_obj_t py_blob_cx(mp_obj_t self_in) {
+    return mp_obj_new_int(fast_roundf(mp_obj_get_float(((py_blob_obj_t *) self_in)->cx)));
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_blob_cx_obj, py_blob_cx);
+
+mp_obj_t py_blob_cxf(mp_obj_t self_in) {
+    return ((py_blob_obj_t *) self_in)->cx;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_blob_cxf_obj, py_blob_cxf);
+
+mp_obj_t py_blob_cy(mp_obj_t self_in) {
+    return mp_obj_new_int(fast_roundf(mp_obj_get_float(((py_blob_obj_t *) self_in)->cy)));
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_blob_cy_obj, py_blob_cy);
+
+mp_obj_t py_blob_cyf(mp_obj_t self_in) {
+    return ((py_blob_obj_t *) self_in)->cy;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_blob_cyf_obj, py_blob_cyf);
+
+mp_obj_t py_blob_rotation(mp_obj_t self_in) {
+    return ((py_blob_obj_t *) self_in)->rotation;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_blob_rotation_obj, py_blob_rotation);
+
+mp_obj_t py_blob_rotation_deg(mp_obj_t self_in) {
+    return mp_obj_new_int((mp_int_t) IM_RAD2DEG(mp_obj_get_float(((py_blob_obj_t *) self_in)->rotation)));
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_blob_rotation_deg_obj, py_blob_rotation_deg);
+
+mp_obj_t py_blob_rotation_rad(mp_obj_t self_in) {
+    return ((py_blob_obj_t *) self_in)->rotation;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_blob_rotation_rad_obj, py_blob_rotation_rad);
+
+mp_obj_t py_blob_code(mp_obj_t self_in) {
+    return ((py_blob_obj_t *) self_in)->code;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_blob_code_obj, py_blob_code);
+
+mp_obj_t py_blob_count(mp_obj_t self_in) {
+    return ((py_blob_obj_t *) self_in)->count;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_blob_count_obj, py_blob_count);
+
+mp_obj_t py_blob_perimeter(mp_obj_t self_in) {
+    return ((py_blob_obj_t *) self_in)->perimeter;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_blob_perimeter_obj, py_blob_perimeter);
+
+mp_obj_t py_blob_roundness(mp_obj_t self_in) {
+    return ((py_blob_obj_t *) self_in)->roundness;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_blob_roundness_obj, py_blob_roundness);
+
+mp_obj_t py_blob_elongation(mp_obj_t self_in) {
+    return mp_obj_new_float(1 - mp_obj_get_float(((py_blob_obj_t *) self_in)->roundness));
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_blob_elongation_obj, py_blob_elongation);
+
 mp_obj_t py_blob_area(mp_obj_t self_in) {
     return mp_obj_new_int(mp_obj_get_int(((py_blob_obj_t *) self_in)->w) * mp_obj_get_int(((py_blob_obj_t *) self_in)->h));
 }
+static MP_DEFINE_CONST_FUN_OBJ_1(py_blob_area_obj, py_blob_area);
+
 mp_obj_t py_blob_density(mp_obj_t self_in) {
     int area = mp_obj_get_int(((py_blob_obj_t *) self_in)->w) * mp_obj_get_int(((py_blob_obj_t *) self_in)->h);
     int pixels = mp_obj_get_int(((py_blob_obj_t *) self_in)->pixels);
     return mp_obj_new_float(IM_DIV(pixels, ((float) area)));
 }
+static MP_DEFINE_CONST_FUN_OBJ_1(py_blob_density_obj, py_blob_density);
+
 // Rect-area versus pixels (e.g. blob area) -> Above.
 // Rect-area versus perimeter -> Basically the same as the above with a different scale factor.
 // Rect-perimeter versus pixels (e.g. blob area) -> Basically the same as the above with a different scale factor.
@@ -4109,6 +4074,8 @@ mp_obj_t py_blob_compactness(mp_obj_t self_in) {
     float perimeter = mp_obj_get_int(((py_blob_obj_t *) self_in)->perimeter);
     return mp_obj_new_float(IM_DIV((pixels * 4 * M_PI), (perimeter * perimeter)));
 }
+static MP_DEFINE_CONST_FUN_OBJ_1(py_blob_compactness_obj, py_blob_compactness);
+
 mp_obj_t py_blob_solidity(mp_obj_t self_in) {
     mp_obj_t *corners, *p0, *p1, *p2, *p3;
     mp_obj_get_array_fixed_n(((py_blob_obj_t *) self_in)->min_corners, 4, &corners);
@@ -4128,10 +4095,12 @@ mp_obj_t py_blob_solidity(mp_obj_t self_in) {
     y3 = mp_obj_get_int(p3[1]);
 
     // Shoelace Formula
-    float min_area = (((x0*y1)+(x1*y2)+(x2*y3)+(x3*y0))-((y0*x1)+(y1*x2)+(y2*x3)+(y3*x0)))/2.0f;
+    float min_area = (((x0 * y1) + (x1 * y2) + (x2 * y3) + (x3 * y0)) - ((y0 * x1) + (y1 * x2) + (y2 * x3) + (y3 * x0))) / 2.0f;
     int pixels = mp_obj_get_int(((py_blob_obj_t *) self_in)->pixels);
     return mp_obj_new_float(IM_MIN(IM_DIV(pixels, min_area), 1));
 }
+static MP_DEFINE_CONST_FUN_OBJ_1(py_blob_solidity_obj, py_blob_solidity);
+
 mp_obj_t py_blob_convexity(mp_obj_t self_in) {
     mp_obj_t *corners, *p0, *p1, *p2, *p3;
     mp_obj_get_array_fixed_n(((py_blob_obj_t *) self_in)->min_corners, 4, &corners);
@@ -4157,12 +4126,22 @@ mp_obj_t py_blob_convexity(mp_obj_t self_in) {
     int perimeter = mp_obj_get_int(((py_blob_obj_t *) self_in)->perimeter);
     return mp_obj_new_float(IM_MIN(IM_DIV(d0 + d1 + d2 + d3, perimeter), 1));
 }
+static MP_DEFINE_CONST_FUN_OBJ_1(py_blob_convexity_obj, py_blob_convexity);
 // Min rect-area versus pixels (e.g. blob area) -> Above.
 // Min rect-area versus perimeter -> Basically the same as the above with a different scale factor.
 // Min rect-perimeter versus pixels (e.g. blob area) -> Basically the same as the above with a different scale factor.
 // Min rect-perimeter versus perimeter -> Above
-mp_obj_t py_blob_x_hist_bins(mp_obj_t self_in) { return ((py_blob_obj_t *) self_in)->x_hist_bins; }
-mp_obj_t py_blob_y_hist_bins(mp_obj_t self_in) { return ((py_blob_obj_t *) self_in)->y_hist_bins; }
+
+mp_obj_t py_blob_x_hist_bins(mp_obj_t self_in) {
+    return ((py_blob_obj_t *) self_in)->x_hist_bins;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_blob_x_hist_bins_obj, py_blob_x_hist_bins);
+
+mp_obj_t py_blob_y_hist_bins(mp_obj_t self_in) {
+    return ((py_blob_obj_t *) self_in)->y_hist_bins;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_blob_y_hist_bins_obj, py_blob_y_hist_bins);
+
 mp_obj_t py_blob_major_axis_line(mp_obj_t self_in) {
     mp_obj_t *corners, *p0, *p1, *p2, *p3;
     mp_obj_get_array_fixed_n(((py_blob_obj_t *) self_in)->min_corners, 4, &corners);
@@ -4205,6 +4184,8 @@ mp_obj_t py_blob_major_axis_line(mp_obj_t self_in) {
                                                   mp_obj_new_int(m3y)});
     }
 }
+static MP_DEFINE_CONST_FUN_OBJ_1(py_blob_major_axis_line_obj, py_blob_major_axis_line);
+
 mp_obj_t py_blob_minor_axis_line(mp_obj_t self_in) {
     mp_obj_t *corners, *p0, *p1, *p2, *p3;
     mp_obj_get_array_fixed_n(((py_blob_obj_t *) self_in)->min_corners, 4, &corners);
@@ -4247,6 +4228,8 @@ mp_obj_t py_blob_minor_axis_line(mp_obj_t self_in) {
                                                   mp_obj_new_int(m3y)});
     }
 }
+static MP_DEFINE_CONST_FUN_OBJ_1(py_blob_minor_axis_line_obj, py_blob_minor_axis_line);
+
 mp_obj_t py_blob_enclosing_circle(mp_obj_t self_in) {
     mp_obj_t *corners, *p0, *p1, *p2, *p3;
     mp_obj_get_array_fixed_n(((py_blob_obj_t *) self_in)->min_corners, 4, &corners);
@@ -4278,6 +4261,8 @@ mp_obj_t py_blob_enclosing_circle(mp_obj_t self_in) {
                                               mp_obj_new_int(cy),
                                               mp_obj_new_int(fast_roundf(d))});
 }
+static MP_DEFINE_CONST_FUN_OBJ_1(py_blob_enclosing_circle_obj, py_blob_enclosing_circle);
+
 mp_obj_t py_blob_enclosed_ellipse(mp_obj_t self_in) {
     mp_obj_t *corners, *p0, *p1, *p2, *p3;
     mp_obj_get_array_fixed_n(((py_blob_obj_t *) self_in)->min_corners, 4, &corners);
@@ -4328,44 +4313,13 @@ mp_obj_t py_blob_enclosed_ellipse(mp_obj_t self_in) {
 
     return mp_obj_new_tuple(5, (mp_obj_t []) {mp_obj_new_int(cx),
                                               mp_obj_new_int(cy),
-                                              mp_obj_new_int(a),
-                                              mp_obj_new_int(b),
-                                              mp_obj_new_int(r)});
+                                              mp_obj_new_int((int) a),
+                                              mp_obj_new_int((int) b),
+                                              mp_obj_new_int((int) r)});
 }
+static MP_DEFINE_CONST_FUN_OBJ_1(py_blob_enclosed_ellipse_obj, py_blob_enclosed_ellipse);
 
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_blob_corners_obj, py_blob_corners);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_blob_min_corners_obj, py_blob_min_corners);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_blob_rect_obj, py_blob_rect);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_blob_x_obj, py_blob_x);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_blob_y_obj, py_blob_y);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_blob_w_obj, py_blob_w);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_blob_h_obj, py_blob_h);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_blob_pixels_obj, py_blob_pixels);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_blob_cx_obj, py_blob_cx);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_blob_cxf_obj, py_blob_cxf);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_blob_cy_obj, py_blob_cy);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_blob_cyf_obj, py_blob_cyf);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_blob_rotation_obj, py_blob_rotation);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_blob_rotation_deg_obj, py_blob_rotation_deg);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_blob_rotation_rad_obj, py_blob_rotation_rad);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_blob_code_obj, py_blob_code);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_blob_count_obj, py_blob_count);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_blob_perimeter_obj, py_blob_perimeter);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_blob_roundness_obj, py_blob_roundness);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_blob_elongation_obj, py_blob_elongation);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_blob_area_obj, py_blob_area);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_blob_density_obj, py_blob_density);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_blob_compactness_obj, py_blob_compactness);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_blob_solidity_obj, py_blob_solidity);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_blob_convexity_obj, py_blob_convexity);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_blob_x_hist_bins_obj, py_blob_x_hist_bins);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_blob_y_hist_bins_obj, py_blob_y_hist_bins);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_blob_major_axis_line_obj, py_blob_major_axis_line);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_blob_minor_axis_line_obj, py_blob_minor_axis_line);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_blob_enclosing_circle_obj, py_blob_enclosing_circle);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_blob_enclosed_ellipse_obj, py_blob_enclosed_ellipse);
-
-STATIC const mp_rom_map_elem_t py_blob_locals_dict_table[] = {
+static const mp_rom_map_elem_t py_blob_locals_dict_table[] = {
     { MP_ROM_QSTR(MP_QSTR_corners), MP_ROM_PTR(&py_blob_corners_obj) },
     { MP_ROM_QSTR(MP_QSTR_min_corners), MP_ROM_PTR(&py_blob_min_corners_obj) },
     { MP_ROM_QSTR(MP_QSTR_rect), MP_ROM_PTR(&py_blob_rect_obj) },
@@ -4386,7 +4340,7 @@ STATIC const mp_rom_map_elem_t py_blob_locals_dict_table[] = {
     { MP_ROM_QSTR(MP_QSTR_perimeter), MP_ROM_PTR(&py_blob_perimeter_obj) },
     { MP_ROM_QSTR(MP_QSTR_roundness), MP_ROM_PTR(&py_blob_roundness_obj) },
     { MP_ROM_QSTR(MP_QSTR_elongation), MP_ROM_PTR(&py_blob_elongation_obj) },
-    { MP_ROM_QSTR(MP_QSTR_area), MP_ROM_PTR(&py_blob_area_obj) } ,
+    { MP_ROM_QSTR(MP_QSTR_area), MP_ROM_PTR(&py_blob_area_obj) },
     { MP_ROM_QSTR(MP_QSTR_density), MP_ROM_PTR(&py_blob_density_obj) },
     { MP_ROM_QSTR(MP_QSTR_extent), MP_ROM_PTR(&py_blob_density_obj) },
     { MP_ROM_QSTR(MP_QSTR_compactness), MP_ROM_PTR(&py_blob_compactness_obj) },
@@ -4400,50 +4354,61 @@ STATIC const mp_rom_map_elem_t py_blob_locals_dict_table[] = {
     { MP_ROM_QSTR(MP_QSTR_enclosed_ellipse), MP_ROM_PTR(&py_blob_enclosed_ellipse_obj) }
 };
 
-STATIC MP_DEFINE_CONST_DICT(py_blob_locals_dict, py_blob_locals_dict_table);
+static MP_DEFINE_CONST_DICT(py_blob_locals_dict, py_blob_locals_dict_table);
 
-static const mp_obj_type_t py_blob_type = {
-    { &mp_type_type },
-    .name  = MP_QSTR_blob,
-    .print = py_blob_print,
-    .subscr = py_blob_subscr,
-    .locals_dict = (mp_obj_t) &py_blob_locals_dict
-};
+static MP_DEFINE_CONST_OBJ_TYPE(
+    py_blob_type,
+    MP_QSTR_blob,
+    MP_TYPE_FLAG_NONE,
+    print, py_blob_print,
+    subscr, py_blob_subscr,
+    locals_dict, &py_blob_locals_dict
+    );
 
-static bool py_image_find_blobs_threshold_cb(void *fun_obj, find_blobs_list_lnk_data_t *blob)
-{
+#define NEW_CORNER_TUPLE(corners, index) \
+    mp_obj_new_tuple(2, (mp_obj_t []) {mp_obj_new_int(corners[(index)].x), mp_obj_new_int(corners[(index)].y)})
+
+static py_blob_obj_t *py_blob_new(find_blobs_list_lnk_data_t *blob) {
+    point_t min_corners[4];
+
     py_blob_obj_t *o = m_new_obj(py_blob_obj_t);
     o->base.type = &py_blob_type;
-    o->corners = mp_obj_new_tuple(4, (mp_obj_t [])
-        {mp_obj_new_tuple(2, (mp_obj_t []) {mp_obj_new_int(blob->corners[(FIND_BLOBS_CORNERS_RESOLUTION*0)/4].x),
-                                            mp_obj_new_int(blob->corners[(FIND_BLOBS_CORNERS_RESOLUTION*0)/4].y)}),
-         mp_obj_new_tuple(2, (mp_obj_t []) {mp_obj_new_int(blob->corners[(FIND_BLOBS_CORNERS_RESOLUTION*1)/4].x),
-                                            mp_obj_new_int(blob->corners[(FIND_BLOBS_CORNERS_RESOLUTION*1)/4].y)}),
-         mp_obj_new_tuple(2, (mp_obj_t []) {mp_obj_new_int(blob->corners[(FIND_BLOBS_CORNERS_RESOLUTION*2)/4].x),
-                                            mp_obj_new_int(blob->corners[(FIND_BLOBS_CORNERS_RESOLUTION*2)/4].y)}),
-         mp_obj_new_tuple(2, (mp_obj_t []) {mp_obj_new_int(blob->corners[(FIND_BLOBS_CORNERS_RESOLUTION*3)/4].x),
-                                            mp_obj_new_int(blob->corners[(FIND_BLOBS_CORNERS_RESOLUTION*3)/4].y)})});
-    point_t min_corners[4];
-    point_min_area_rectangle(blob->corners, min_corners, FIND_BLOBS_CORNERS_RESOLUTION);
-    o->min_corners = mp_obj_new_tuple(4, (mp_obj_t [])
-        {mp_obj_new_tuple(2, (mp_obj_t []) {mp_obj_new_int(min_corners[0].x), mp_obj_new_int(min_corners[0].y)}),
-         mp_obj_new_tuple(2, (mp_obj_t []) {mp_obj_new_int(min_corners[1].x), mp_obj_new_int(min_corners[1].y)}),
-         mp_obj_new_tuple(2, (mp_obj_t []) {mp_obj_new_int(min_corners[2].x), mp_obj_new_int(min_corners[2].y)}),
-         mp_obj_new_tuple(2, (mp_obj_t []) {mp_obj_new_int(min_corners[3].x), mp_obj_new_int(min_corners[3].y)})});
+
     o->x = mp_obj_new_int(blob->rect.x);
     o->y = mp_obj_new_int(blob->rect.y);
     o->w = mp_obj_new_int(blob->rect.w);
     o->h = mp_obj_new_int(blob->rect.h);
-    o->pixels = mp_obj_new_int(blob->pixels);
+
     o->cx = mp_obj_new_float(blob->centroid_x);
     o->cy = mp_obj_new_float(blob->centroid_y);
+
+    o->pixels = mp_obj_new_int(blob->pixels);
     o->rotation = mp_obj_new_float(blob->rotation);
+
     o->code = mp_obj_new_int(blob->code);
     o->count = mp_obj_new_int(blob->count);
+
     o->perimeter = mp_obj_new_int(blob->perimeter);
     o->roundness = mp_obj_new_float(blob->roundness);
+
     o->x_hist_bins = mp_obj_new_list(blob->x_hist_bins_count, NULL);
     o->y_hist_bins = mp_obj_new_list(blob->y_hist_bins_count, NULL);
+
+    o->corners = mp_obj_new_tuple(4, (mp_obj_t []) {
+        NEW_CORNER_TUPLE(blob->corners, ((FIND_BLOBS_CORNERS_RESOLUTION * 0) / 4)),
+        NEW_CORNER_TUPLE(blob->corners, ((FIND_BLOBS_CORNERS_RESOLUTION * 1) / 4)),
+        NEW_CORNER_TUPLE(blob->corners, ((FIND_BLOBS_CORNERS_RESOLUTION * 2) / 4)),
+        NEW_CORNER_TUPLE(blob->corners, ((FIND_BLOBS_CORNERS_RESOLUTION * 3) / 4))
+    });
+
+    point_min_area_rectangle(blob->corners, min_corners, FIND_BLOBS_CORNERS_RESOLUTION);
+
+    o->min_corners = mp_obj_new_tuple(4, (mp_obj_t []) {
+        NEW_CORNER_TUPLE(min_corners, 0),
+        NEW_CORNER_TUPLE(min_corners, 1),
+        NEW_CORNER_TUPLE(min_corners, 2),
+        NEW_CORNER_TUPLE(min_corners, 3)
+    });
 
     for (int i = 0; i < blob->x_hist_bins_count; i++) {
         ((mp_obj_list_t *) o->x_hist_bins)->items[i] = mp_obj_new_int(blob->x_hist_bins[i]);
@@ -4453,104 +4418,25 @@ static bool py_image_find_blobs_threshold_cb(void *fun_obj, find_blobs_list_lnk_
         ((mp_obj_list_t *) o->y_hist_bins)->items[i] = mp_obj_new_int(blob->y_hist_bins[i]);
     }
 
-    return mp_obj_is_true(mp_call_function_1(fun_obj, o));
+    return o;
+}
+static bool py_image_find_blobs_threshold_cb(void *fun_obj, find_blobs_list_lnk_data_t *blob) {
+    return mp_obj_is_true(mp_call_function_1(fun_obj, py_blob_new(blob)));
 }
 
-static bool py_image_find_blobs_merge_cb(void *fun_obj, find_blobs_list_lnk_data_t *blob0, find_blobs_list_lnk_data_t *blob1)
-{
-    py_blob_obj_t *o0 = m_new_obj(py_blob_obj_t);
-    o0->base.type = &py_blob_type;
-    o0->corners = mp_obj_new_tuple(4, (mp_obj_t [])
-        {mp_obj_new_tuple(2, (mp_obj_t []) {mp_obj_new_int(blob0->corners[(FIND_BLOBS_CORNERS_RESOLUTION*0)/4].x),
-                                            mp_obj_new_int(blob0->corners[(FIND_BLOBS_CORNERS_RESOLUTION*0)/4].y)}),
-         mp_obj_new_tuple(2, (mp_obj_t []) {mp_obj_new_int(blob0->corners[(FIND_BLOBS_CORNERS_RESOLUTION*1)/4].x),
-                                            mp_obj_new_int(blob0->corners[(FIND_BLOBS_CORNERS_RESOLUTION*1)/4].y)}),
-         mp_obj_new_tuple(2, (mp_obj_t []) {mp_obj_new_int(blob0->corners[(FIND_BLOBS_CORNERS_RESOLUTION*2)/4].x),
-                                            mp_obj_new_int(blob0->corners[(FIND_BLOBS_CORNERS_RESOLUTION*2)/4].y)}),
-         mp_obj_new_tuple(2, (mp_obj_t []) {mp_obj_new_int(blob0->corners[(FIND_BLOBS_CORNERS_RESOLUTION*3)/4].x),
-                                            mp_obj_new_int(blob0->corners[(FIND_BLOBS_CORNERS_RESOLUTION*3)/4].y)})});
-    point_t min_area_rect_corners0[4];
-    point_min_area_rectangle(blob0->corners, min_area_rect_corners0, FIND_BLOBS_CORNERS_RESOLUTION);
-    o0->min_corners = mp_obj_new_tuple(4, (mp_obj_t [])
-        {mp_obj_new_tuple(2, (mp_obj_t []) {mp_obj_new_int(min_area_rect_corners0[0].x), mp_obj_new_int(min_area_rect_corners0[0].y)}),
-         mp_obj_new_tuple(2, (mp_obj_t []) {mp_obj_new_int(min_area_rect_corners0[1].x), mp_obj_new_int(min_area_rect_corners0[1].y)}),
-         mp_obj_new_tuple(2, (mp_obj_t []) {mp_obj_new_int(min_area_rect_corners0[2].x), mp_obj_new_int(min_area_rect_corners0[2].y)}),
-         mp_obj_new_tuple(2, (mp_obj_t []) {mp_obj_new_int(min_area_rect_corners0[3].x), mp_obj_new_int(min_area_rect_corners0[3].y)})});
-    o0->x = mp_obj_new_int(blob0->rect.x);
-    o0->y = mp_obj_new_int(blob0->rect.y);
-    o0->w = mp_obj_new_int(blob0->rect.w);
-    o0->h = mp_obj_new_int(blob0->rect.h);
-    o0->pixels = mp_obj_new_int(blob0->pixels);
-    o0->cx = mp_obj_new_float(blob0->centroid_x);
-    o0->cy = mp_obj_new_float(blob0->centroid_y);
-    o0->rotation = mp_obj_new_float(blob0->rotation);
-    o0->code = mp_obj_new_int(blob0->code);
-    o0->count = mp_obj_new_int(blob0->count);
-    o0->perimeter = mp_obj_new_int(blob0->perimeter);
-    o0->roundness = mp_obj_new_float(blob0->roundness);
-    o0->x_hist_bins = mp_obj_new_list(blob0->x_hist_bins_count, NULL);
-    o0->y_hist_bins = mp_obj_new_list(blob0->y_hist_bins_count, NULL);
-
-    for (int i = 0; i < blob0->x_hist_bins_count; i++) {
-        ((mp_obj_list_t *) o0->x_hist_bins)->items[i] = mp_obj_new_int(blob0->x_hist_bins[i]);
-    }
-
-    for (int i = 0; i < blob0->y_hist_bins_count; i++) {
-        ((mp_obj_list_t *) o0->y_hist_bins)->items[i] = mp_obj_new_int(blob0->y_hist_bins[i]);
-    }
-
-    py_blob_obj_t *o1 = m_new_obj(py_blob_obj_t);
-    o1->base.type = &py_blob_type;
-    o1->corners = mp_obj_new_tuple(4, (mp_obj_t [])
-        {mp_obj_new_tuple(2, (mp_obj_t []) {mp_obj_new_int(blob1->corners[(FIND_BLOBS_CORNERS_RESOLUTION*0)/4].x),
-                                            mp_obj_new_int(blob1->corners[(FIND_BLOBS_CORNERS_RESOLUTION*0)/4].y)}),
-         mp_obj_new_tuple(2, (mp_obj_t []) {mp_obj_new_int(blob1->corners[(FIND_BLOBS_CORNERS_RESOLUTION*1)/4].x),
-                                            mp_obj_new_int(blob1->corners[(FIND_BLOBS_CORNERS_RESOLUTION*1)/4].y)}),
-         mp_obj_new_tuple(2, (mp_obj_t []) {mp_obj_new_int(blob1->corners[(FIND_BLOBS_CORNERS_RESOLUTION*2)/4].x),
-                                            mp_obj_new_int(blob1->corners[(FIND_BLOBS_CORNERS_RESOLUTION*2)/4].y)}),
-         mp_obj_new_tuple(2, (mp_obj_t []) {mp_obj_new_int(blob1->corners[(FIND_BLOBS_CORNERS_RESOLUTION*3)/4].x),
-                                            mp_obj_new_int(blob1->corners[(FIND_BLOBS_CORNERS_RESOLUTION*3)/4].y)})});
-    point_t min_area_rect_corners1[4];
-    point_min_area_rectangle(blob1->corners, min_area_rect_corners1, FIND_BLOBS_CORNERS_RESOLUTION);
-    o1->min_corners = mp_obj_new_tuple(4, (mp_obj_t [])
-        {mp_obj_new_tuple(2, (mp_obj_t []) {mp_obj_new_int(min_area_rect_corners1[0].x), mp_obj_new_int(min_area_rect_corners1[0].y)}),
-         mp_obj_new_tuple(2, (mp_obj_t []) {mp_obj_new_int(min_area_rect_corners1[1].x), mp_obj_new_int(min_area_rect_corners1[1].y)}),
-         mp_obj_new_tuple(2, (mp_obj_t []) {mp_obj_new_int(min_area_rect_corners1[2].x), mp_obj_new_int(min_area_rect_corners1[2].y)}),
-         mp_obj_new_tuple(2, (mp_obj_t []) {mp_obj_new_int(min_area_rect_corners1[3].x), mp_obj_new_int(min_area_rect_corners1[3].y)})});
-    o1->x = mp_obj_new_int(blob1->rect.x);
-    o1->y = mp_obj_new_int(blob1->rect.y);
-    o1->w = mp_obj_new_int(blob1->rect.w);
-    o1->h = mp_obj_new_int(blob1->rect.h);
-    o1->pixels = mp_obj_new_int(blob1->pixels);
-    o1->cx = mp_obj_new_float(blob1->centroid_x);
-    o1->cy = mp_obj_new_float(blob1->centroid_y);
-    o1->rotation = mp_obj_new_float(blob1->rotation);
-    o1->code = mp_obj_new_int(blob1->code);
-    o1->count = mp_obj_new_int(blob1->count);
-    o1->perimeter = mp_obj_new_int(blob1->perimeter);
-    o1->roundness = mp_obj_new_float(blob1->roundness);
-    o1->x_hist_bins = mp_obj_new_list(blob1->x_hist_bins_count, NULL);
-    o1->y_hist_bins = mp_obj_new_list(blob1->y_hist_bins_count, NULL);
-
-    for (int i = 0; i < blob1->x_hist_bins_count; i++) {
-        ((mp_obj_list_t *) o1->x_hist_bins)->items[i] = mp_obj_new_int(blob1->x_hist_bins[i]);
-    }
-
-    for (int i = 0; i < blob1->y_hist_bins_count; i++) {
-        ((mp_obj_list_t *) o1->y_hist_bins)->items[i] = mp_obj_new_int(blob1->y_hist_bins[i]);
-    }
-
-    return mp_obj_is_true(mp_call_function_2(fun_obj, o0, o1));
+static bool py_image_find_blobs_merge_cb(void *fun_obj, find_blobs_list_lnk_data_t *blob0, find_blobs_list_lnk_data_t *blob1) {
+    return mp_obj_is_true(mp_call_function_2(fun_obj, py_blob_new(blob0), py_blob_new(blob1)));
 }
 
-static mp_obj_t py_image_find_blobs(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    image_t *arg_img = py_helper_arg_to_image_mutable(args[0]);
+static mp_obj_t py_image_find_blobs(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
+    image_t *arg_img = py_helper_arg_to_image(args[0], ARG_IMAGE_MUTABLE);
 
     list_t thresholds;
     list_init(&thresholds, sizeof(color_thresholds_list_lnk_data_t));
     py_helper_arg_to_thresholds(args[1], &thresholds);
-    if (!list_size(&thresholds)) return mp_obj_new_list(0, NULL);
+    if (!list_size(&thresholds)) {
+        return mp_obj_new_list(0, NULL);
+    }
     bool invert = py_helper_keyword_int(n_args, args, 2, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_invert), false);
 
     rectangle_t roi;
@@ -4581,9 +4467,23 @@ static mp_obj_t py_image_find_blobs(uint n_args, const mp_obj_t *args, mp_map_t 
 
     list_t out;
     fb_alloc_mark();
-    imlib_find_blobs(&out, arg_img, &roi, x_stride, y_stride, &thresholds, invert,
-            area_threshold, pixels_threshold, merge, margin,
-            py_image_find_blobs_threshold_cb, threshold_cb, py_image_find_blobs_merge_cb, merge_cb, x_hist_bins_max, y_hist_bins_max);
+    imlib_find_blobs(&out,
+                     arg_img,
+                     &roi,
+                     x_stride,
+                     y_stride,
+                     &thresholds,
+                     invert,
+                     area_threshold,
+                     pixels_threshold,
+                     merge,
+                     margin,
+                     py_image_find_blobs_threshold_cb,
+                     threshold_cb,
+                     py_image_find_blobs_merge_cb,
+                     merge_cb,
+                     x_hist_bins_max,
+                     y_hist_bins_max);
     fb_alloc_free_till_mark();
     list_free(&thresholds);
 
@@ -4591,61 +4491,22 @@ static mp_obj_t py_image_find_blobs(uint n_args, const mp_obj_t *args, mp_map_t 
     for (size_t i = 0; list_size(&out); i++) {
         find_blobs_list_lnk_data_t lnk_data;
         list_pop_front(&out, &lnk_data);
-
-        py_blob_obj_t *o = m_new_obj(py_blob_obj_t);
-        o->base.type = &py_blob_type;
-        o->corners = mp_obj_new_tuple(4, (mp_obj_t [])
-            {mp_obj_new_tuple(2, (mp_obj_t []) {mp_obj_new_int(lnk_data.corners[(FIND_BLOBS_CORNERS_RESOLUTION*0)/4].x),
-                                                mp_obj_new_int(lnk_data.corners[(FIND_BLOBS_CORNERS_RESOLUTION*0)/4].y)}),
-             mp_obj_new_tuple(2, (mp_obj_t []) {mp_obj_new_int(lnk_data.corners[(FIND_BLOBS_CORNERS_RESOLUTION*1)/4].x),
-                                                mp_obj_new_int(lnk_data.corners[(FIND_BLOBS_CORNERS_RESOLUTION*1)/4].y)}),
-             mp_obj_new_tuple(2, (mp_obj_t []) {mp_obj_new_int(lnk_data.corners[(FIND_BLOBS_CORNERS_RESOLUTION*2)/4].x),
-                                                mp_obj_new_int(lnk_data.corners[(FIND_BLOBS_CORNERS_RESOLUTION*2)/4].y)}),
-             mp_obj_new_tuple(2, (mp_obj_t []) {mp_obj_new_int(lnk_data.corners[(FIND_BLOBS_CORNERS_RESOLUTION*3)/4].x),
-                                                mp_obj_new_int(lnk_data.corners[(FIND_BLOBS_CORNERS_RESOLUTION*3)/4].y)})});
-        point_t min_corners[4];
-        point_min_area_rectangle(lnk_data.corners, min_corners, FIND_BLOBS_CORNERS_RESOLUTION);
-        o->min_corners = mp_obj_new_tuple(4, (mp_obj_t [])
-            {mp_obj_new_tuple(2, (mp_obj_t []) {mp_obj_new_int(min_corners[0].x), mp_obj_new_int(min_corners[0].y)}),
-             mp_obj_new_tuple(2, (mp_obj_t []) {mp_obj_new_int(min_corners[1].x), mp_obj_new_int(min_corners[1].y)}),
-             mp_obj_new_tuple(2, (mp_obj_t []) {mp_obj_new_int(min_corners[2].x), mp_obj_new_int(min_corners[2].y)}),
-             mp_obj_new_tuple(2, (mp_obj_t []) {mp_obj_new_int(min_corners[3].x), mp_obj_new_int(min_corners[3].y)})});
-        o->x = mp_obj_new_int(lnk_data.rect.x);
-        o->y = mp_obj_new_int(lnk_data.rect.y);
-        o->w = mp_obj_new_int(lnk_data.rect.w);
-        o->h = mp_obj_new_int(lnk_data.rect.h);
-        o->pixels = mp_obj_new_int(lnk_data.pixels);
-        o->cx = mp_obj_new_float(lnk_data.centroid_x);
-        o->cy = mp_obj_new_float(lnk_data.centroid_y);
-        o->rotation = mp_obj_new_float(lnk_data.rotation);
-        o->code = mp_obj_new_int(lnk_data.code);
-        o->count = mp_obj_new_int(lnk_data.count);
-        o->perimeter = mp_obj_new_int(lnk_data.perimeter);
-        o->roundness = mp_obj_new_float(lnk_data.roundness);
-        o->x_hist_bins = mp_obj_new_list(lnk_data.x_hist_bins_count, NULL);
-        o->y_hist_bins = mp_obj_new_list(lnk_data.y_hist_bins_count, NULL);
-
-        for (int i = 0; i < lnk_data.x_hist_bins_count; i++) {
-            ((mp_obj_list_t *) o->x_hist_bins)->items[i] = mp_obj_new_int(lnk_data.x_hist_bins[i]);
+        objects_list->items[i] = py_blob_new(&lnk_data);
+        if (lnk_data.x_hist_bins) {
+            xfree(lnk_data.x_hist_bins);
         }
-
-        for (int i = 0; i < lnk_data.y_hist_bins_count; i++) {
-            ((mp_obj_list_t *) o->y_hist_bins)->items[i] = mp_obj_new_int(lnk_data.y_hist_bins[i]);
+        if (lnk_data.y_hist_bins) {
+            xfree(lnk_data.y_hist_bins);
         }
-
-        objects_list->items[i] = o;
-        if (lnk_data.x_hist_bins) xfree(lnk_data.x_hist_bins);
-        if (lnk_data.y_hist_bins) xfree(lnk_data.y_hist_bins);
     }
 
     return objects_list;
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_find_blobs_obj, 2, py_image_find_blobs);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_find_blobs_obj, 2, py_image_find_blobs);
 
 #ifdef IMLIB_ENABLE_FIND_LINES
-static mp_obj_t py_image_find_lines(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    image_t *arg_img = py_helper_arg_to_image_mutable(args[0]);
+static mp_obj_t py_image_find_lines(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
+    image_t *arg_img = py_helper_arg_to_image(args[0], ARG_IMAGE_MUTABLE);
 
     rectangle_t roi;
     py_helper_keyword_rectangle_roi(arg_img, n_args, args, 1, kw_args, &roi);
@@ -4686,12 +4547,11 @@ static mp_obj_t py_image_find_lines(uint n_args, const mp_obj_t *args, mp_map_t 
 
     return objects_list;
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_find_lines_obj, 1, py_image_find_lines);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_find_lines_obj, 1, py_image_find_lines);
 #endif // IMLIB_ENABLE_FIND_LINES
 
-#ifdef IMLIB_ENABLE_FIND_LINE_SEGMENTS
-static mp_obj_t py_image_find_line_segments(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
+#if defined(IMLIB_ENABLE_FIND_LINE_SEGMENTS) && (!defined(OMV_NO_GPL))
+static mp_obj_t py_image_find_line_segments(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
     image_t *arg_img = py_image_cobj(args[0]);
 
     rectangle_t roi;
@@ -4728,19 +4588,18 @@ static mp_obj_t py_image_find_line_segments(uint n_args, const mp_obj_t *args, m
 
     return objects_list;
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_find_line_segments_obj, 1, py_image_find_line_segments);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_find_line_segments_obj, 1, py_image_find_line_segments);
 #endif // IMLIB_ENABLE_FIND_LINE_SEGMENTS
 
 #ifdef IMLIB_ENABLE_FIND_CIRCLES
 // Circle Object //
-#define py_circle_obj_size 4
+#define py_circle_obj_size    4
 typedef struct py_circle_obj {
     mp_obj_base_t base;
     mp_obj_t x, y, r, magnitude;
 } py_circle_obj_t;
 
-static void py_circle_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind)
-{
+static void py_circle_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind) {
     py_circle_obj_t *self = self_in;
     mp_printf(print,
               "{\"x\":%d, \"y\":%d, \"r\":%d, \"magnitude\":%d}",
@@ -4750,9 +4609,9 @@ static void py_circle_print(const mp_print_t *print, mp_obj_t self_in, mp_print_
               mp_obj_get_int(self->magnitude));
 }
 
-static mp_obj_t py_circle_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t value)
-{
-    if (value == MP_OBJ_SENTINEL) { // load
+static mp_obj_t py_circle_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t value) {
+    if (value == MP_OBJ_SENTINEL) {
+        // load
         py_circle_obj_t *self = self_in;
         if (MP_OBJ_IS_TYPE(index, &mp_type_slice)) {
             mp_bound_slice_t slice;
@@ -4773,25 +4632,34 @@ static mp_obj_t py_circle_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t valu
     return MP_OBJ_NULL; // op not supported
 }
 
-mp_obj_t py_circle_circle(mp_obj_t self_in)
-{
+mp_obj_t py_circle_circle(mp_obj_t self_in) {
     return mp_obj_new_tuple(3, (mp_obj_t []) {((py_circle_obj_t *) self_in)->x,
                                               ((py_circle_obj_t *) self_in)->y,
                                               ((py_circle_obj_t *) self_in)->r});
 }
+static MP_DEFINE_CONST_FUN_OBJ_1(py_circle_circle_obj, py_circle_circle);
 
-mp_obj_t py_circle_x(mp_obj_t self_in) { return ((py_circle_obj_t *) self_in)->x; }
-mp_obj_t py_circle_y(mp_obj_t self_in) { return ((py_circle_obj_t *) self_in)->y; }
-mp_obj_t py_circle_r(mp_obj_t self_in) { return ((py_circle_obj_t *) self_in)->r; }
-mp_obj_t py_circle_magnitude(mp_obj_t self_in) { return ((py_circle_obj_t *) self_in)->magnitude; }
+mp_obj_t py_circle_x(mp_obj_t self_in) {
+    return ((py_circle_obj_t *) self_in)->x;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_circle_x_obj, py_circle_x);
 
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_circle_circle_obj, py_circle_circle);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_circle_x_obj, py_circle_x);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_circle_y_obj, py_circle_y);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_circle_r_obj, py_circle_r);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_circle_magnitude_obj, py_circle_magnitude);
+mp_obj_t py_circle_y(mp_obj_t self_in) {
+    return ((py_circle_obj_t *) self_in)->y;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_circle_y_obj, py_circle_y);
 
-STATIC const mp_rom_map_elem_t py_circle_locals_dict_table[] = {
+mp_obj_t py_circle_r(mp_obj_t self_in) {
+    return ((py_circle_obj_t *) self_in)->r;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_circle_r_obj, py_circle_r);
+
+mp_obj_t py_circle_magnitude(mp_obj_t self_in) {
+    return ((py_circle_obj_t *) self_in)->magnitude;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_circle_magnitude_obj, py_circle_magnitude);
+
+static const mp_rom_map_elem_t py_circle_locals_dict_table[] = {
     { MP_ROM_QSTR(MP_QSTR_circle), MP_ROM_PTR(&py_circle_circle_obj) },
     { MP_ROM_QSTR(MP_QSTR_x), MP_ROM_PTR(&py_circle_x_obj) },
     { MP_ROM_QSTR(MP_QSTR_y), MP_ROM_PTR(&py_circle_y_obj) },
@@ -4799,19 +4667,19 @@ STATIC const mp_rom_map_elem_t py_circle_locals_dict_table[] = {
     { MP_ROM_QSTR(MP_QSTR_magnitude), MP_ROM_PTR(&py_circle_magnitude_obj) }
 };
 
-STATIC MP_DEFINE_CONST_DICT(py_circle_locals_dict, py_circle_locals_dict_table);
+static MP_DEFINE_CONST_DICT(py_circle_locals_dict, py_circle_locals_dict_table);
 
-static const mp_obj_type_t py_circle_type = {
-    { &mp_type_type },
-    .name  = MP_QSTR_circle,
-    .print = py_circle_print,
-    .subscr = py_circle_subscr,
-    .locals_dict = (mp_obj_t) &py_circle_locals_dict
-};
+static MP_DEFINE_CONST_OBJ_TYPE(
+    py_circle_type,
+    MP_QSTR_circle,
+    MP_TYPE_FLAG_NONE,
+    print, py_circle_print,
+    subscr, py_circle_subscr,
+    locals_dict, &py_circle_locals_dict
+    );
 
-static mp_obj_t py_image_find_circles(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    image_t *arg_img = py_helper_arg_to_image_mutable(args[0]);
+static mp_obj_t py_image_find_circles(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
+    image_t *arg_img = py_helper_arg_to_image(args[0], ARG_IMAGE_MUTABLE);
 
     rectangle_t roi;
     py_helper_keyword_rectangle_roi(arg_img, n_args, args, 1, kw_args, &roi);
@@ -4825,9 +4693,9 @@ static mp_obj_t py_image_find_circles(uint n_args, const mp_obj_t *args, mp_map_
     unsigned int y_margin = py_helper_keyword_int(n_args, args, 6, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_y_margin), 10);
     unsigned int r_margin = py_helper_keyword_int(n_args, args, 7, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_r_margin), 10);
     unsigned int r_min = IM_MAX(py_helper_keyword_int(n_args, args, 8, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_r_min),
-            2), 2);
+                                                      2), 2);
     unsigned int r_max = IM_MIN(py_helper_keyword_int(n_args, args, 9, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_r_max),
-            IM_MIN((roi.w / 2), (roi.h / 2))), IM_MIN((roi.w / 2), (roi.h / 2)));
+                                                      IM_MIN((roi.w / 2), (roi.h / 2))), IM_MIN((roi.w / 2), (roi.h / 2)));
     unsigned int r_step = py_helper_keyword_int(n_args, args, 10, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_r_step), 2);
 
     list_t out;
@@ -4853,20 +4721,19 @@ static mp_obj_t py_image_find_circles(uint n_args, const mp_obj_t *args, mp_map_
 
     return objects_list;
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_find_circles_obj, 1, py_image_find_circles);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_find_circles_obj, 1, py_image_find_circles);
 #endif // IMLIB_ENABLE_FIND_CIRCLES
 
 #ifdef IMLIB_ENABLE_FIND_RECTS
 // Rect Object //
-#define py_rect_obj_size 5
+#define py_rect_obj_size    5
 typedef struct py_rect_obj {
     mp_obj_base_t base;
     mp_obj_t corners;
     mp_obj_t x, y, w, h, magnitude;
 } py_rect_obj_t;
 
-static void py_rect_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind)
-{
+static void py_rect_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind) {
     py_rect_obj_t *self = self_in;
     mp_printf(print,
               "{\"x\":%d, \"y\":%d, \"w\":%d, \"h\":%d, \"magnitude\":%d}",
@@ -4877,9 +4744,9 @@ static void py_rect_print(const mp_print_t *print, mp_obj_t self_in, mp_print_ki
               mp_obj_get_int(self->magnitude));
 }
 
-static mp_obj_t py_rect_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t value)
-{
-    if (value == MP_OBJ_SENTINEL) { // load
+static mp_obj_t py_rect_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t value) {
+    if (value == MP_OBJ_SENTINEL) {
+        // load
         py_rect_obj_t *self = self_in;
         if (MP_OBJ_IS_TYPE(index, &mp_type_slice)) {
             mp_bound_slice_t slice;
@@ -4901,30 +4768,45 @@ static mp_obj_t py_rect_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t value)
     return MP_OBJ_NULL; // op not supported
 }
 
-mp_obj_t py_rect_corners(mp_obj_t self_in) { return ((py_rect_obj_t *) self_in)->corners; }
-mp_obj_t py_rect_rect(mp_obj_t self_in)
-{
+mp_obj_t py_rect_corners(mp_obj_t self_in) {
+    return ((py_rect_obj_t *) self_in)->corners;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_rect_corners_obj, py_rect_corners);
+
+mp_obj_t py_rect_rect(mp_obj_t self_in) {
     return mp_obj_new_tuple(4, (mp_obj_t []) {((py_rect_obj_t *) self_in)->x,
                                               ((py_rect_obj_t *) self_in)->y,
                                               ((py_rect_obj_t *) self_in)->w,
                                               ((py_rect_obj_t *) self_in)->h});
 }
+static MP_DEFINE_CONST_FUN_OBJ_1(py_rect_rect_obj, py_rect_rect);
 
-mp_obj_t py_rect_x(mp_obj_t self_in) { return ((py_rect_obj_t *) self_in)->x; }
-mp_obj_t py_rect_y(mp_obj_t self_in) { return ((py_rect_obj_t *) self_in)->y; }
-mp_obj_t py_rect_w(mp_obj_t self_in) { return ((py_rect_obj_t *) self_in)->w; }
-mp_obj_t py_rect_h(mp_obj_t self_in) { return ((py_rect_obj_t *) self_in)->h; }
-mp_obj_t py_rect_magnitude(mp_obj_t self_in) { return ((py_rect_obj_t *) self_in)->magnitude; }
+mp_obj_t py_rect_x(mp_obj_t self_in) {
+    return ((py_rect_obj_t *) self_in)->x;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_rect_x_obj, py_rect_x);
 
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_rect_corners_obj, py_rect_corners);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_rect_rect_obj, py_rect_rect);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_rect_x_obj, py_rect_x);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_rect_y_obj, py_rect_y);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_rect_w_obj, py_rect_w);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_rect_h_obj, py_rect_h);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_rect_magnitude_obj, py_rect_magnitude);
+mp_obj_t py_rect_y(mp_obj_t self_in) {
+    return ((py_rect_obj_t *) self_in)->y;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_rect_y_obj, py_rect_y);
 
-STATIC const mp_rom_map_elem_t py_rect_locals_dict_table[] = {
+mp_obj_t py_rect_w(mp_obj_t self_in) {
+    return ((py_rect_obj_t *) self_in)->w;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_rect_w_obj, py_rect_w);
+
+mp_obj_t py_rect_h(mp_obj_t self_in) {
+    return ((py_rect_obj_t *) self_in)->h;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_rect_h_obj, py_rect_h);
+
+mp_obj_t py_rect_magnitude(mp_obj_t self_in) {
+    return ((py_rect_obj_t *) self_in)->magnitude;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_rect_magnitude_obj, py_rect_magnitude);
+
+static const mp_rom_map_elem_t py_rect_locals_dict_table[] = {
     { MP_ROM_QSTR(MP_QSTR_corners), MP_ROM_PTR(&py_rect_corners_obj) },
     { MP_ROM_QSTR(MP_QSTR_rect), MP_ROM_PTR(&py_rect_rect_obj) },
     { MP_ROM_QSTR(MP_QSTR_x), MP_ROM_PTR(&py_rect_x_obj) },
@@ -4934,18 +4816,18 @@ STATIC const mp_rom_map_elem_t py_rect_locals_dict_table[] = {
     { MP_ROM_QSTR(MP_QSTR_magnitude), MP_ROM_PTR(&py_rect_magnitude_obj) }
 };
 
-STATIC MP_DEFINE_CONST_DICT(py_rect_locals_dict, py_rect_locals_dict_table);
+static MP_DEFINE_CONST_DICT(py_rect_locals_dict, py_rect_locals_dict_table);
 
-static const mp_obj_type_t py_rect_type = {
-    { &mp_type_type },
-    .name  = MP_QSTR_rect,
-    .print = py_rect_print,
-    .subscr = py_rect_subscr,
-    .locals_dict = (mp_obj_t) &py_rect_locals_dict
-};
+static MP_DEFINE_CONST_OBJ_TYPE(
+    py_rect_type,
+    MP_QSTR_rect,
+    MP_TYPE_FLAG_NONE,
+    print, py_rect_print,
+    subscr, py_rect_subscr,
+    locals_dict, &py_rect_locals_dict
+    );
 
-static mp_obj_t py_image_find_rects(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
+static mp_obj_t py_image_find_rects(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
     image_t *arg_img = py_image_cobj(args[0]);
 
     rectangle_t roi;
@@ -4966,10 +4848,18 @@ static mp_obj_t py_image_find_rects(uint n_args, const mp_obj_t *args, mp_map_t 
         py_rect_obj_t *o = m_new_obj(py_rect_obj_t);
         o->base.type = &py_rect_type;
         o->corners = mp_obj_new_tuple(4, (mp_obj_t [])
-            {mp_obj_new_tuple(2, (mp_obj_t []) {mp_obj_new_int(lnk_data.corners[0].x), mp_obj_new_int(lnk_data.corners[0].y)}),
-             mp_obj_new_tuple(2, (mp_obj_t []) {mp_obj_new_int(lnk_data.corners[1].x), mp_obj_new_int(lnk_data.corners[1].y)}),
-             mp_obj_new_tuple(2, (mp_obj_t []) {mp_obj_new_int(lnk_data.corners[2].x), mp_obj_new_int(lnk_data.corners[2].y)}),
-             mp_obj_new_tuple(2, (mp_obj_t []) {mp_obj_new_int(lnk_data.corners[3].x), mp_obj_new_int(lnk_data.corners[3].y)})});
+                                      {mp_obj_new_tuple(2,
+                                                        (mp_obj_t []) {mp_obj_new_int(lnk_data.corners[0].x),
+                                                                       mp_obj_new_int(lnk_data.corners[0].y)}),
+                                       mp_obj_new_tuple(2,
+                                                        (mp_obj_t []) {mp_obj_new_int(lnk_data.corners[1].x),
+                                                                       mp_obj_new_int(lnk_data.corners[1].y)}),
+                                       mp_obj_new_tuple(2,
+                                                        (mp_obj_t []) {mp_obj_new_int(lnk_data.corners[2].x),
+                                                                       mp_obj_new_int(lnk_data.corners[2].y)}),
+                                       mp_obj_new_tuple(2,
+                                                        (mp_obj_t []) {mp_obj_new_int(lnk_data.corners[3].x),
+                                                                       mp_obj_new_int(lnk_data.corners[3].y)})});
         o->x = mp_obj_new_int(lnk_data.rect.x);
         o->y = mp_obj_new_int(lnk_data.rect.y);
         o->w = mp_obj_new_int(lnk_data.rect.w);
@@ -4981,20 +4871,19 @@ static mp_obj_t py_image_find_rects(uint n_args, const mp_obj_t *args, mp_map_t 
 
     return objects_list;
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_find_rects_obj, 1, py_image_find_rects);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_find_rects_obj, 1, py_image_find_rects);
 #endif // IMLIB_ENABLE_FIND_RECTS
 
 #ifdef IMLIB_ENABLE_QRCODES
 // QRCode Object //
-#define py_qrcode_obj_size 10
+#define py_qrcode_obj_size    10
 typedef struct py_qrcode_obj {
     mp_obj_base_t base;
     mp_obj_t corners;
     mp_obj_t x, y, w, h, payload, version, ecc_level, mask, data_type, eci;
 } py_qrcode_obj_t;
 
-static void py_qrcode_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind)
-{
+static void py_qrcode_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind) {
     py_qrcode_obj_t *self = self_in;
     mp_printf(print,
               "{\"x\":%d, \"y\":%d, \"w\":%d, \"h\":%d, \"payload\":\"%s\","
@@ -5011,9 +4900,9 @@ static void py_qrcode_print(const mp_print_t *print, mp_obj_t self_in, mp_print_
               mp_obj_get_int(self->eci));
 }
 
-static mp_obj_t py_qrcode_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t value)
-{
-    if (value == MP_OBJ_SENTINEL) { // load
+static mp_obj_t py_qrcode_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t value) {
+    if (value == MP_OBJ_SENTINEL) {
+        // load
         py_qrcode_obj_t *self = self_in;
         if (MP_OBJ_IS_TYPE(index, &mp_type_slice)) {
             mp_bound_slice_t slice;
@@ -5040,48 +4929,90 @@ static mp_obj_t py_qrcode_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t valu
     return MP_OBJ_NULL; // op not supported
 }
 
-mp_obj_t py_qrcode_corners(mp_obj_t self_in) { return ((py_qrcode_obj_t *) self_in)->corners; }
-mp_obj_t py_qrcode_rect(mp_obj_t self_in)
-{
+mp_obj_t py_qrcode_corners(mp_obj_t self_in) {
+    return ((py_qrcode_obj_t *) self_in)->corners;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_qrcode_corners_obj, py_qrcode_corners);
+
+mp_obj_t py_qrcode_rect(mp_obj_t self_in) {
     return mp_obj_new_tuple(4, (mp_obj_t []) {((py_qrcode_obj_t *) self_in)->x,
                                               ((py_qrcode_obj_t *) self_in)->y,
                                               ((py_qrcode_obj_t *) self_in)->w,
                                               ((py_qrcode_obj_t *) self_in)->h});
 }
+static MP_DEFINE_CONST_FUN_OBJ_1(py_qrcode_rect_obj, py_qrcode_rect);
 
-mp_obj_t py_qrcode_x(mp_obj_t self_in) { return ((py_qrcode_obj_t *) self_in)->x; }
-mp_obj_t py_qrcode_y(mp_obj_t self_in) { return ((py_qrcode_obj_t *) self_in)->y; }
-mp_obj_t py_qrcode_w(mp_obj_t self_in) { return ((py_qrcode_obj_t *) self_in)->w; }
-mp_obj_t py_qrcode_h(mp_obj_t self_in) { return ((py_qrcode_obj_t *) self_in)->h; }
-mp_obj_t py_qrcode_payload(mp_obj_t self_in) { return ((py_qrcode_obj_t *) self_in)->payload; }
-mp_obj_t py_qrcode_version(mp_obj_t self_in) { return ((py_qrcode_obj_t *) self_in)->version; }
-mp_obj_t py_qrcode_ecc_level(mp_obj_t self_in) { return ((py_qrcode_obj_t *) self_in)->ecc_level; }
-mp_obj_t py_qrcode_mask(mp_obj_t self_in) { return ((py_qrcode_obj_t *) self_in)->mask; }
-mp_obj_t py_qrcode_data_type(mp_obj_t self_in) { return ((py_qrcode_obj_t *) self_in)->data_type; }
-mp_obj_t py_qrcode_eci(mp_obj_t self_in) { return ((py_qrcode_obj_t *) self_in)->eci; }
-mp_obj_t py_qrcode_is_numeric(mp_obj_t self_in) { return mp_obj_new_bool(mp_obj_get_int(((py_qrcode_obj_t *) self_in)->data_type) == 1); }
-mp_obj_t py_qrcode_is_alphanumeric(mp_obj_t self_in) { return mp_obj_new_bool(mp_obj_get_int(((py_qrcode_obj_t *) self_in)->data_type) == 2); }
-mp_obj_t py_qrcode_is_binary(mp_obj_t self_in) { return mp_obj_new_bool(mp_obj_get_int(((py_qrcode_obj_t *) self_in)->data_type) == 4); }
-mp_obj_t py_qrcode_is_kanji(mp_obj_t self_in) { return mp_obj_new_bool(mp_obj_get_int(((py_qrcode_obj_t *) self_in)->data_type) == 8); }
+mp_obj_t py_qrcode_x(mp_obj_t self_in) {
+    return ((py_qrcode_obj_t *) self_in)->x;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_qrcode_x_obj, py_qrcode_x);
 
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_qrcode_corners_obj, py_qrcode_corners);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_qrcode_rect_obj, py_qrcode_rect);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_qrcode_x_obj, py_qrcode_x);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_qrcode_y_obj, py_qrcode_y);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_qrcode_w_obj, py_qrcode_w);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_qrcode_h_obj, py_qrcode_h);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_qrcode_payload_obj, py_qrcode_payload);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_qrcode_version_obj, py_qrcode_version);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_qrcode_ecc_level_obj, py_qrcode_ecc_level);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_qrcode_mask_obj, py_qrcode_mask);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_qrcode_data_type_obj, py_qrcode_data_type);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_qrcode_eci_obj, py_qrcode_eci);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_qrcode_is_numeric_obj, py_qrcode_is_numeric);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_qrcode_is_alphanumeric_obj, py_qrcode_is_alphanumeric);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_qrcode_is_binary_obj, py_qrcode_is_binary);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_qrcode_is_kanji_obj, py_qrcode_is_kanji);
+mp_obj_t py_qrcode_y(mp_obj_t self_in) {
+    return ((py_qrcode_obj_t *) self_in)->y;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_qrcode_y_obj, py_qrcode_y);
 
-STATIC const mp_rom_map_elem_t py_qrcode_locals_dict_table[] = {
+mp_obj_t py_qrcode_w(mp_obj_t self_in) {
+    return ((py_qrcode_obj_t *) self_in)->w;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_qrcode_w_obj, py_qrcode_w);
+
+mp_obj_t py_qrcode_h(mp_obj_t self_in) {
+    return ((py_qrcode_obj_t *) self_in)->h;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_qrcode_h_obj, py_qrcode_h);
+
+mp_obj_t py_qrcode_payload(mp_obj_t self_in) {
+    return ((py_qrcode_obj_t *) self_in)->payload;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_qrcode_payload_obj, py_qrcode_payload);
+
+mp_obj_t py_qrcode_version(mp_obj_t self_in) {
+    return ((py_qrcode_obj_t *) self_in)->version;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_qrcode_version_obj, py_qrcode_version);
+
+mp_obj_t py_qrcode_ecc_level(mp_obj_t self_in) {
+    return ((py_qrcode_obj_t *) self_in)->ecc_level;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_qrcode_ecc_level_obj, py_qrcode_ecc_level);
+
+mp_obj_t py_qrcode_mask(mp_obj_t self_in) {
+    return ((py_qrcode_obj_t *) self_in)->mask;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_qrcode_mask_obj, py_qrcode_mask);
+
+mp_obj_t py_qrcode_data_type(mp_obj_t self_in) {
+    return ((py_qrcode_obj_t *) self_in)->data_type;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_qrcode_data_type_obj, py_qrcode_data_type);
+
+mp_obj_t py_qrcode_eci(mp_obj_t self_in) {
+    return ((py_qrcode_obj_t *) self_in)->eci;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_qrcode_eci_obj, py_qrcode_eci);
+
+mp_obj_t py_qrcode_is_numeric(mp_obj_t self_in) {
+    return mp_obj_new_bool(mp_obj_get_int(((py_qrcode_obj_t *) self_in)->data_type) == 1);
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_qrcode_is_numeric_obj, py_qrcode_is_numeric);
+
+mp_obj_t py_qrcode_is_alphanumeric(mp_obj_t self_in) {
+    return mp_obj_new_bool(mp_obj_get_int(((py_qrcode_obj_t *) self_in)->data_type) == 2);
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_qrcode_is_alphanumeric_obj, py_qrcode_is_alphanumeric);
+
+mp_obj_t py_qrcode_is_binary(mp_obj_t self_in) {
+    return mp_obj_new_bool(mp_obj_get_int(((py_qrcode_obj_t *) self_in)->data_type) == 4);
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_qrcode_is_binary_obj, py_qrcode_is_binary);
+
+mp_obj_t py_qrcode_is_kanji(mp_obj_t self_in) {
+    return mp_obj_new_bool(mp_obj_get_int(((py_qrcode_obj_t *) self_in)->data_type) == 8);
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_qrcode_is_kanji_obj, py_qrcode_is_kanji);
+
+static const mp_rom_map_elem_t py_qrcode_locals_dict_table[] = {
     { MP_ROM_QSTR(MP_QSTR_corners), MP_ROM_PTR(&py_qrcode_corners_obj) },
     { MP_ROM_QSTR(MP_QSTR_rect), MP_ROM_PTR(&py_qrcode_rect_obj) },
     { MP_ROM_QSTR(MP_QSTR_x), MP_ROM_PTR(&py_qrcode_x_obj) },
@@ -5100,18 +5031,18 @@ STATIC const mp_rom_map_elem_t py_qrcode_locals_dict_table[] = {
     { MP_ROM_QSTR(MP_QSTR_is_kanji), MP_ROM_PTR(&py_qrcode_is_kanji_obj) }
 };
 
-STATIC MP_DEFINE_CONST_DICT(py_qrcode_locals_dict, py_qrcode_locals_dict_table);
+static MP_DEFINE_CONST_DICT(py_qrcode_locals_dict, py_qrcode_locals_dict_table);
 
-static const mp_obj_type_t py_qrcode_type = {
-    { &mp_type_type },
-    .name  = MP_QSTR_qrcode,
-    .print = py_qrcode_print,
-    .subscr = py_qrcode_subscr,
-    .locals_dict = (mp_obj_t) &py_qrcode_locals_dict
-};
+static MP_DEFINE_CONST_OBJ_TYPE(
+    py_qrcode_type,
+    MP_QSTR_qrcode,
+    MP_TYPE_FLAG_NONE,
+    print, py_qrcode_print,
+    subscr, py_qrcode_subscr,
+    locals_dict, &py_qrcode_locals_dict
+    );
 
-static mp_obj_t py_image_find_qrcodes(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
+static mp_obj_t py_image_find_qrcodes(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
     image_t *arg_img = py_image_cobj(args[0]);
 
     rectangle_t roi;
@@ -5130,10 +5061,18 @@ static mp_obj_t py_image_find_qrcodes(uint n_args, const mp_obj_t *args, mp_map_
         py_qrcode_obj_t *o = m_new_obj(py_qrcode_obj_t);
         o->base.type = &py_qrcode_type;
         o->corners = mp_obj_new_tuple(4, (mp_obj_t [])
-            {mp_obj_new_tuple(2, (mp_obj_t []) {mp_obj_new_int(lnk_data.corners[0].x), mp_obj_new_int(lnk_data.corners[0].y)}),
-             mp_obj_new_tuple(2, (mp_obj_t []) {mp_obj_new_int(lnk_data.corners[1].x), mp_obj_new_int(lnk_data.corners[1].y)}),
-             mp_obj_new_tuple(2, (mp_obj_t []) {mp_obj_new_int(lnk_data.corners[2].x), mp_obj_new_int(lnk_data.corners[2].y)}),
-             mp_obj_new_tuple(2, (mp_obj_t []) {mp_obj_new_int(lnk_data.corners[3].x), mp_obj_new_int(lnk_data.corners[3].y)})});
+                                      {mp_obj_new_tuple(2,
+                                                        (mp_obj_t []) {mp_obj_new_int(lnk_data.corners[0].x),
+                                                                       mp_obj_new_int(lnk_data.corners[0].y)}),
+                                       mp_obj_new_tuple(2,
+                                                        (mp_obj_t []) {mp_obj_new_int(lnk_data.corners[1].x),
+                                                                       mp_obj_new_int(lnk_data.corners[1].y)}),
+                                       mp_obj_new_tuple(2,
+                                                        (mp_obj_t []) {mp_obj_new_int(lnk_data.corners[2].x),
+                                                                       mp_obj_new_int(lnk_data.corners[2].y)}),
+                                       mp_obj_new_tuple(2,
+                                                        (mp_obj_t []) {mp_obj_new_int(lnk_data.corners[3].x),
+                                                                       mp_obj_new_int(lnk_data.corners[3].y)})});
         o->x = mp_obj_new_int(lnk_data.rect.x);
         o->y = mp_obj_new_int(lnk_data.rect.y);
         o->w = mp_obj_new_int(lnk_data.rect.w);
@@ -5151,12 +5090,12 @@ static mp_obj_t py_image_find_qrcodes(uint n_args, const mp_obj_t *args, mp_map_
 
     return objects_list;
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_find_qrcodes_obj, 1, py_image_find_qrcodes);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_find_qrcodes_obj, 1, py_image_find_qrcodes);
 #endif // IMLIB_ENABLE_QRCODES
 
 #ifdef IMLIB_ENABLE_APRILTAGS
 // AprilTag Object //
-#define py_apriltag_obj_size 18
+#define py_apriltag_obj_size    18
 typedef struct py_apriltag_obj {
     mp_obj_base_t base;
     mp_obj_t corners;
@@ -5165,9 +5104,8 @@ typedef struct py_apriltag_obj {
     mp_obj_t x_rotation, y_rotation, z_rotation;
 } py_apriltag_obj_t;
 
-static void py_apriltag_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind)
-{
-    py_apriltag_obj_t *self = self_in;
+static void py_apriltag_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind) {
+    py_apriltag_obj_t *self = MP_OBJ_TO_PTR(self_in);
     mp_printf(print,
               "{\"x\":%d, \"y\":%d, \"w\":%d, \"h\":%d, \"id\":%d,"
               " \"family\":%d, \"cx\":%d, \"cy\":%d, \"rotation\":%f, \"decision_margin\":%f, \"hamming\":%d, \"goodness\":%f,"
@@ -5193,133 +5131,131 @@ static void py_apriltag_print(const mp_print_t *print, mp_obj_t self_in, mp_prin
               (double) mp_obj_get_float(self->z_rotation));
 }
 
-static mp_obj_t py_apriltag_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t value)
-{
-    if (value == MP_OBJ_SENTINEL) { // load
-        py_apriltag_obj_t *self = self_in;
-        if (MP_OBJ_IS_TYPE(index, &mp_type_slice)) {
-            mp_bound_slice_t slice;
-            if (!mp_seq_get_fast_slice_indexes(py_apriltag_obj_size, index, &slice)) {
-                mp_raise_msg(&mp_type_OSError, MP_ERROR_TEXT("only slices with step=1 (aka None) are supported"));
-            }
-            mp_obj_tuple_t *result = mp_obj_new_tuple(slice.stop - slice.start, NULL);
-            mp_seq_copy(result->items, &(self->x) + slice.start, result->len, mp_obj_t);
-            return result;
-        }
-        switch (mp_get_index(self->base.type, py_apriltag_obj_size, index, false)) {
-            case 0: return self->x;
-            case 1: return self->y;
-            case 2: return self->w;
-            case 3: return self->h;
-            case 4: return self->id;
-            case 5: return self->family;
-            case 6: return self->cx;
-            case 7: return self->cy;
-            case 8: return self->rotation;
-            case 9: return self->decision_margin;
-            case 10: return self->hamming;
-            case 11: return self->goodness;
-            case 12: return self->x_translation;
-            case 13: return self->y_translation;
-            case 14: return self->z_translation;
-            case 15: return self->x_rotation;
-            case 16: return self->y_rotation;
-            case 17: return self->z_rotation;
+static void py_apriltag_attr(mp_obj_t self_in, qstr attr, mp_obj_t *dest) {
+    py_apriltag_obj_t *self = MP_OBJ_TO_PTR(self_in);
+    if (dest[0] == MP_OBJ_NULL) {
+        // Load attribute.
+        switch (attr) {
+            case MP_QSTR_corners:
+                dest[0] = self->corners;
+                break;
+            case MP_QSTR_rect:
+                dest[0] = mp_obj_new_tuple(4, (mp_obj_t []) { self->x, self->y, self->w, self->h });
+                break;
+            case MP_QSTR_x:
+                dest[0] = self->x;
+                break;
+            case MP_QSTR_y:
+                dest[0] = self->y;
+                break;
+            case MP_QSTR_w:
+                dest[0] = self->w;
+                break;
+            case MP_QSTR_h:
+                dest[0] = self->h;
+                break;
+            case MP_QSTR_area:
+                dest[0] = mp_obj_new_int(mp_obj_get_int(self->w) * mp_obj_get_int(self->h));
+                break;
+            case MP_QSTR_id:
+                dest[0] = self->id;
+                break;
+            case MP_QSTR_family:
+                dest[0] = self->family;
+                break;
+            case MP_QSTR_name:
+                switch (mp_obj_get_int(self->family)) {
+                    #ifdef IMLIB_ENABLE_APRILTAGS_TAG16H5
+                    case TAG16H5:
+                        dest[0] = MP_OBJ_NEW_QSTR(MP_QSTR_TAG16H5);
+                        break;
+                    #endif
+                    #ifdef IMLIB_ENABLE_APRILTAGS_TAG25H7
+                    case TAG25H7:
+                        dest[0] = MP_OBJ_NEW_QSTR(MP_QSTR_TAG25H7);
+                        break;
+                    #endif
+                    #ifdef IMLIB_ENABLE_APRILTAGS_TAG25H9
+                    case TAG25H9:
+                        dest[0] = MP_OBJ_NEW_QSTR(MP_QSTR_TAG25H9);
+                        break;
+                    #endif
+                    #ifdef IMLIB_ENABLE_APRILTAGS_TAG36H10
+                    case TAG36H10:
+                        dest[0] = MP_OBJ_NEW_QSTR(MP_QSTR_TAG36H10);
+                        break;
+                    #endif
+                    #ifdef IMLIB_ENABLE_APRILTAGS_TAG36H11
+                    case TAG36H11:
+                        dest[0] = MP_OBJ_NEW_QSTR(MP_QSTR_TAG36H11);
+                        break;
+                    #endif
+                    #ifdef IMLIB_ENABLE_APRILTAGS_ARTOOLKIT
+                    case ARTOOLKIT:
+                        dest[0] = MP_OBJ_NEW_QSTR(MP_QSTR_ARTOOLKIT);
+                        break;
+                    #endif
+                }
+                break;
+            case MP_QSTR_cx:
+                dest[0] = mp_obj_new_int(fast_roundf(mp_obj_get_float(self->cx)));
+                break;
+            case MP_QSTR_cxf:
+                dest[0] = self->cx;
+                break;
+            case MP_QSTR_cy:
+                dest[0] = mp_obj_new_int(fast_roundf(mp_obj_get_float(self->cy)));
+                break;
+            case MP_QSTR_cyf:
+                dest[0] = self->cy;
+                break;
+            case MP_QSTR_rotation:
+                dest[0] = self->rotation;
+                break;
+            case MP_QSTR_decision_margin:
+                dest[0] = self->decision_margin;
+                break;
+            case MP_QSTR_hamming:
+                dest[0] = self->hamming;
+                break;
+            case MP_QSTR_goodness:
+                dest[0] = self->goodness;
+                break;
+            case MP_QSTR_x_translation:
+                dest[0] = self->x_translation;
+                break;
+            case MP_QSTR_y_translation:
+                dest[0] = self->y_translation;
+                break;
+            case MP_QSTR_z_translation:
+                dest[0] = self->z_translation;
+                break;
+            case MP_QSTR_x_rotation:
+                dest[0] = self->x_rotation;
+                break;
+            case MP_QSTR_y_rotation:
+                dest[0] = self->y_rotation;
+                break;
+            case MP_QSTR_z_rotation:
+                dest[0] = self->z_rotation;
+                break;
+            default:
+                // Continue lookup in locals_dict.
+                dest[1] = MP_OBJ_SENTINEL;
+                break;
         }
     }
-    return MP_OBJ_NULL; // op not supported
 }
 
-mp_obj_t py_apriltag_corners(mp_obj_t self_in) { return ((py_apriltag_obj_t *) self_in)->corners; }
-mp_obj_t py_apriltag_rect(mp_obj_t self_in)
-{
-    return mp_obj_new_tuple(4, (mp_obj_t []) {((py_apriltag_obj_t *) self_in)->x,
-                                              ((py_apriltag_obj_t *) self_in)->y,
-                                              ((py_apriltag_obj_t *) self_in)->w,
-                                              ((py_apriltag_obj_t *) self_in)->h});
-}
+static MP_DEFINE_CONST_OBJ_TYPE(
+    py_apriltag_type,
+    MP_QSTR_apriltag,
+    MP_TYPE_FLAG_NONE,
+    attr, py_apriltag_attr,
+    print, py_apriltag_print
+    );
 
-mp_obj_t py_apriltag_x(mp_obj_t self_in) { return ((py_apriltag_obj_t *) self_in)->x; }
-mp_obj_t py_apriltag_y(mp_obj_t self_in) { return ((py_apriltag_obj_t *) self_in)->y; }
-mp_obj_t py_apriltag_w(mp_obj_t self_in) { return ((py_apriltag_obj_t *) self_in)->w; }
-mp_obj_t py_apriltag_h(mp_obj_t self_in) { return ((py_apriltag_obj_t *) self_in)->h; }
-mp_obj_t py_apriltag_id(mp_obj_t self_in) { return ((py_apriltag_obj_t *) self_in)->id; }
-mp_obj_t py_apriltag_family(mp_obj_t self_in) { return ((py_apriltag_obj_t *) self_in)->family; }
-mp_obj_t py_apriltag_cx(mp_obj_t self_in) { return mp_obj_new_int(fast_roundf(mp_obj_get_float(((py_apriltag_obj_t *) self_in)->cx))); }
-mp_obj_t py_apriltag_cxf(mp_obj_t self_in) { return ((py_apriltag_obj_t *) self_in)->cx; }
-mp_obj_t py_apriltag_cy(mp_obj_t self_in) { return mp_obj_new_int(fast_roundf(mp_obj_get_float(((py_apriltag_obj_t *) self_in)->cy))); }
-mp_obj_t py_apriltag_cyf(mp_obj_t self_in) { return ((py_apriltag_obj_t *) self_in)->cy; }
-mp_obj_t py_apriltag_rotation(mp_obj_t self_in) { return ((py_apriltag_obj_t *) self_in)->rotation; }
-mp_obj_t py_apriltag_decision_margin(mp_obj_t self_in) { return ((py_apriltag_obj_t *) self_in)->decision_margin; }
-mp_obj_t py_apriltag_hamming(mp_obj_t self_in) { return ((py_apriltag_obj_t *) self_in)->hamming; }
-mp_obj_t py_apriltag_goodness(mp_obj_t self_in) { return ((py_apriltag_obj_t *) self_in)->goodness; }
-mp_obj_t py_apriltag_x_translation(mp_obj_t self_in) { return ((py_apriltag_obj_t *) self_in)->x_translation; }
-mp_obj_t py_apriltag_y_translation(mp_obj_t self_in) { return ((py_apriltag_obj_t *) self_in)->y_translation; }
-mp_obj_t py_apriltag_z_translation(mp_obj_t self_in) { return ((py_apriltag_obj_t *) self_in)->z_translation; }
-mp_obj_t py_apriltag_x_rotation(mp_obj_t self_in) { return ((py_apriltag_obj_t *) self_in)->x_rotation; }
-mp_obj_t py_apriltag_y_rotation(mp_obj_t self_in) { return ((py_apriltag_obj_t *) self_in)->y_rotation; }
-mp_obj_t py_apriltag_z_rotation(mp_obj_t self_in) { return ((py_apriltag_obj_t *) self_in)->z_rotation; }
-
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_apriltag_corners_obj, py_apriltag_corners);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_apriltag_rect_obj, py_apriltag_rect);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_apriltag_x_obj, py_apriltag_x);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_apriltag_y_obj, py_apriltag_y);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_apriltag_w_obj, py_apriltag_w);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_apriltag_h_obj, py_apriltag_h);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_apriltag_id_obj, py_apriltag_id);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_apriltag_family_obj, py_apriltag_family);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_apriltag_cx_obj, py_apriltag_cx);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_apriltag_cxf_obj, py_apriltag_cxf);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_apriltag_cy_obj, py_apriltag_cy);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_apriltag_cyf_obj, py_apriltag_cyf);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_apriltag_rotation_obj, py_apriltag_rotation);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_apriltag_decision_margin_obj, py_apriltag_decision_margin);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_apriltag_hamming_obj, py_apriltag_hamming);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_apriltag_goodness_obj, py_apriltag_goodness);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_apriltag_x_translation_obj, py_apriltag_x_translation);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_apriltag_y_translation_obj, py_apriltag_y_translation);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_apriltag_z_translation_obj, py_apriltag_z_translation);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_apriltag_x_rotation_obj, py_apriltag_x_rotation);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_apriltag_y_rotation_obj, py_apriltag_y_rotation);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_apriltag_z_rotation_obj, py_apriltag_z_rotation);
-
-STATIC const mp_rom_map_elem_t py_apriltag_locals_dict_table[] = {
-    { MP_ROM_QSTR(MP_QSTR_corners), MP_ROM_PTR(&py_apriltag_corners_obj) },
-    { MP_ROM_QSTR(MP_QSTR_rect), MP_ROM_PTR(&py_apriltag_rect_obj) },
-    { MP_ROM_QSTR(MP_QSTR_x), MP_ROM_PTR(&py_apriltag_x_obj) },
-    { MP_ROM_QSTR(MP_QSTR_y), MP_ROM_PTR(&py_apriltag_y_obj) },
-    { MP_ROM_QSTR(MP_QSTR_w), MP_ROM_PTR(&py_apriltag_w_obj) },
-    { MP_ROM_QSTR(MP_QSTR_h), MP_ROM_PTR(&py_apriltag_h_obj) },
-    { MP_ROM_QSTR(MP_QSTR_id), MP_ROM_PTR(&py_apriltag_id_obj) },
-    { MP_ROM_QSTR(MP_QSTR_family), MP_ROM_PTR(&py_apriltag_family_obj) },
-    { MP_ROM_QSTR(MP_QSTR_cx), MP_ROM_PTR(&py_apriltag_cx_obj) },
-    { MP_ROM_QSTR(MP_QSTR_cxf), MP_ROM_PTR(&py_apriltag_cxf_obj) },
-    { MP_ROM_QSTR(MP_QSTR_cy), MP_ROM_PTR(&py_apriltag_cy_obj) },
-    { MP_ROM_QSTR(MP_QSTR_cyf), MP_ROM_PTR(&py_apriltag_cyf_obj) },
-    { MP_ROM_QSTR(MP_QSTR_rotation), MP_ROM_PTR(&py_apriltag_rotation_obj) },
-    { MP_ROM_QSTR(MP_QSTR_decision_margin), MP_ROM_PTR(&py_apriltag_decision_margin_obj) },
-    { MP_ROM_QSTR(MP_QSTR_hamming), MP_ROM_PTR(&py_apriltag_hamming_obj) },
-    { MP_ROM_QSTR(MP_QSTR_goodness), MP_ROM_PTR(&py_apriltag_goodness_obj) },
-    { MP_ROM_QSTR(MP_QSTR_x_translation), MP_ROM_PTR(&py_apriltag_x_translation_obj) },
-    { MP_ROM_QSTR(MP_QSTR_y_translation), MP_ROM_PTR(&py_apriltag_y_translation_obj) },
-    { MP_ROM_QSTR(MP_QSTR_z_translation), MP_ROM_PTR(&py_apriltag_z_translation_obj) },
-    { MP_ROM_QSTR(MP_QSTR_x_rotation), MP_ROM_PTR(&py_apriltag_x_rotation_obj) },
-    { MP_ROM_QSTR(MP_QSTR_y_rotation), MP_ROM_PTR(&py_apriltag_y_rotation_obj) },
-    { MP_ROM_QSTR(MP_QSTR_z_rotation), MP_ROM_PTR(&py_apriltag_z_rotation_obj) }
-};
-
-STATIC MP_DEFINE_CONST_DICT(py_apriltag_locals_dict, py_apriltag_locals_dict_table);
-
-static const mp_obj_type_t py_apriltag_type = {
-    { &mp_type_type },
-    .name  = MP_QSTR_apriltag,
-    .print = py_apriltag_print,
-    .subscr = py_apriltag_subscr,
-    .locals_dict = (mp_obj_t) &py_apriltag_locals_dict
-};
-
-static mp_obj_t py_image_find_apriltags(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
+static mp_obj_t py_image_find_apriltags(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
     image_t *arg_img = py_image_cobj(args[0]);
 
     rectangle_t roi;
@@ -5354,18 +5290,26 @@ static mp_obj_t py_image_find_apriltags(uint n_args, const mp_obj_t *args, mp_ma
         py_apriltag_obj_t *o = m_new_obj(py_apriltag_obj_t);
         o->base.type = &py_apriltag_type;
         o->corners = mp_obj_new_tuple(4, (mp_obj_t [])
-            {mp_obj_new_tuple(2, (mp_obj_t []) {mp_obj_new_int(lnk_data.corners[0].x), mp_obj_new_int(lnk_data.corners[0].y)}),
-             mp_obj_new_tuple(2, (mp_obj_t []) {mp_obj_new_int(lnk_data.corners[1].x), mp_obj_new_int(lnk_data.corners[1].y)}),
-             mp_obj_new_tuple(2, (mp_obj_t []) {mp_obj_new_int(lnk_data.corners[2].x), mp_obj_new_int(lnk_data.corners[2].y)}),
-             mp_obj_new_tuple(2, (mp_obj_t []) {mp_obj_new_int(lnk_data.corners[3].x), mp_obj_new_int(lnk_data.corners[3].y)})});
+                                      {mp_obj_new_tuple(2,
+                                                        (mp_obj_t []) {mp_obj_new_int(lnk_data.corners[0].x),
+                                                                       mp_obj_new_int(lnk_data.corners[0].y)}),
+                                       mp_obj_new_tuple(2,
+                                                        (mp_obj_t []) {mp_obj_new_int(lnk_data.corners[1].x),
+                                                                       mp_obj_new_int(lnk_data.corners[1].y)}),
+                                       mp_obj_new_tuple(2,
+                                                        (mp_obj_t []) {mp_obj_new_int(lnk_data.corners[2].x),
+                                                                       mp_obj_new_int(lnk_data.corners[2].y)}),
+                                       mp_obj_new_tuple(2,
+                                                        (mp_obj_t []) {mp_obj_new_int(lnk_data.corners[3].x),
+                                                                       mp_obj_new_int(lnk_data.corners[3].y)})});
         o->x = mp_obj_new_int(lnk_data.rect.x);
         o->y = mp_obj_new_int(lnk_data.rect.y);
         o->w = mp_obj_new_int(lnk_data.rect.w);
         o->h = mp_obj_new_int(lnk_data.rect.h);
         o->id = mp_obj_new_int(lnk_data.id);
         o->family = mp_obj_new_int(lnk_data.family);
-        o->cx = mp_obj_new_int(lnk_data.centroid_x);
-        o->cy = mp_obj_new_int(lnk_data.centroid_y);
+        o->cx = mp_obj_new_int((int) lnk_data.centroid_x);
+        o->cy = mp_obj_new_int((int) lnk_data.centroid_y);
         o->rotation = mp_obj_new_float(lnk_data.z_rotation);
         o->decision_margin = mp_obj_new_float(lnk_data.decision_margin);
         o->hamming = mp_obj_new_int(lnk_data.hamming);
@@ -5382,20 +5326,19 @@ static mp_obj_t py_image_find_apriltags(uint n_args, const mp_obj_t *args, mp_ma
 
     return objects_list;
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_find_apriltags_obj, 1, py_image_find_apriltags);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_find_apriltags_obj, 1, py_image_find_apriltags);
 #endif // IMLIB_ENABLE_APRILTAGS
 
 #ifdef IMLIB_ENABLE_DATAMATRICES
 // DataMatrix Object //
-#define py_datamatrix_obj_size 10
+#define py_datamatrix_obj_size    10
 typedef struct py_datamatrix_obj {
     mp_obj_base_t base;
     mp_obj_t corners;
     mp_obj_t x, y, w, h, payload, rotation, rows, columns, capacity, padding;
 } py_datamatrix_obj_t;
 
-static void py_datamatrix_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind)
-{
+static void py_datamatrix_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind) {
     py_datamatrix_obj_t *self = self_in;
     mp_printf(print,
               "{\"x\":%d, \"y\":%d, \"w\":%d, \"h\":%d, \"payload\":\"%s\","
@@ -5412,9 +5355,9 @@ static void py_datamatrix_print(const mp_print_t *print, mp_obj_t self_in, mp_pr
               mp_obj_get_int(self->padding));
 }
 
-static mp_obj_t py_datamatrix_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t value)
-{
-    if (value == MP_OBJ_SENTINEL) { // load
+static mp_obj_t py_datamatrix_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t value) {
+    if (value == MP_OBJ_SENTINEL) {
+        // load
         py_datamatrix_obj_t *self = self_in;
         if (MP_OBJ_IS_TYPE(index, &mp_type_slice)) {
             mp_bound_slice_t slice;
@@ -5441,40 +5384,70 @@ static mp_obj_t py_datamatrix_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t 
     return MP_OBJ_NULL; // op not supported
 }
 
-mp_obj_t py_datamatrix_corners(mp_obj_t self_in) { return ((py_datamatrix_obj_t *) self_in)->corners; }
-mp_obj_t py_datamatrix_rect(mp_obj_t self_in)
-{
+mp_obj_t py_datamatrix_corners(mp_obj_t self_in) {
+    return ((py_datamatrix_obj_t *) self_in)->corners;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_datamatrix_corners_obj, py_datamatrix_corners);
+
+mp_obj_t py_datamatrix_rect(mp_obj_t self_in) {
     return mp_obj_new_tuple(4, (mp_obj_t []) {((py_datamatrix_obj_t *) self_in)->x,
                                               ((py_datamatrix_obj_t *) self_in)->y,
                                               ((py_datamatrix_obj_t *) self_in)->w,
                                               ((py_datamatrix_obj_t *) self_in)->h});
 }
+static MP_DEFINE_CONST_FUN_OBJ_1(py_datamatrix_rect_obj, py_datamatrix_rect);
 
-mp_obj_t py_datamatrix_x(mp_obj_t self_in) { return ((py_datamatrix_obj_t *) self_in)->x; }
-mp_obj_t py_datamatrix_y(mp_obj_t self_in) { return ((py_datamatrix_obj_t *) self_in)->y; }
-mp_obj_t py_datamatrix_w(mp_obj_t self_in) { return ((py_datamatrix_obj_t *) self_in)->w; }
-mp_obj_t py_datamatrix_h(mp_obj_t self_in) { return ((py_datamatrix_obj_t *) self_in)->h; }
-mp_obj_t py_datamatrix_payload(mp_obj_t self_in) { return ((py_datamatrix_obj_t *) self_in)->payload; }
-mp_obj_t py_datamatrix_rotation(mp_obj_t self_in) { return ((py_datamatrix_obj_t *) self_in)->rotation; }
-mp_obj_t py_datamatrix_rows(mp_obj_t self_in) { return ((py_datamatrix_obj_t *) self_in)->rows; }
-mp_obj_t py_datamatrix_columns(mp_obj_t self_in) { return ((py_datamatrix_obj_t *) self_in)->columns; }
-mp_obj_t py_datamatrix_capacity(mp_obj_t self_in) { return ((py_datamatrix_obj_t *) self_in)->capacity; }
-mp_obj_t py_datamatrix_padding(mp_obj_t self_in) { return ((py_datamatrix_obj_t *) self_in)->padding; }
+mp_obj_t py_datamatrix_x(mp_obj_t self_in) {
+    return ((py_datamatrix_obj_t *) self_in)->x;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_datamatrix_x_obj, py_datamatrix_x);
 
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_datamatrix_corners_obj, py_datamatrix_corners);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_datamatrix_rect_obj, py_datamatrix_rect);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_datamatrix_x_obj, py_datamatrix_x);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_datamatrix_y_obj, py_datamatrix_y);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_datamatrix_w_obj, py_datamatrix_w);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_datamatrix_h_obj, py_datamatrix_h);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_datamatrix_payload_obj, py_datamatrix_payload);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_datamatrix_rotation_obj, py_datamatrix_rotation);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_datamatrix_rows_obj, py_datamatrix_rows);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_datamatrix_columns_obj, py_datamatrix_columns);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_datamatrix_capacity_obj, py_datamatrix_capacity);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_datamatrix_padding_obj, py_datamatrix_padding);
+mp_obj_t py_datamatrix_y(mp_obj_t self_in) {
+    return ((py_datamatrix_obj_t *) self_in)->y;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_datamatrix_y_obj, py_datamatrix_y);
 
-STATIC const mp_rom_map_elem_t py_datamatrix_locals_dict_table[] = {
+mp_obj_t py_datamatrix_w(mp_obj_t self_in) {
+    return ((py_datamatrix_obj_t *) self_in)->w;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_datamatrix_w_obj, py_datamatrix_w);
+
+mp_obj_t py_datamatrix_h(mp_obj_t self_in) {
+    return ((py_datamatrix_obj_t *) self_in)->h;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_datamatrix_h_obj, py_datamatrix_h);
+
+mp_obj_t py_datamatrix_payload(mp_obj_t self_in) {
+    return ((py_datamatrix_obj_t *) self_in)->payload;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_datamatrix_payload_obj, py_datamatrix_payload);
+
+mp_obj_t py_datamatrix_rotation(mp_obj_t self_in) {
+    return ((py_datamatrix_obj_t *) self_in)->rotation;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_datamatrix_rotation_obj, py_datamatrix_rotation);
+
+mp_obj_t py_datamatrix_rows(mp_obj_t self_in) {
+    return ((py_datamatrix_obj_t *) self_in)->rows;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_datamatrix_rows_obj, py_datamatrix_rows);
+
+mp_obj_t py_datamatrix_columns(mp_obj_t self_in) {
+    return ((py_datamatrix_obj_t *) self_in)->columns;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_datamatrix_columns_obj, py_datamatrix_columns);
+
+mp_obj_t py_datamatrix_capacity(mp_obj_t self_in) {
+    return ((py_datamatrix_obj_t *) self_in)->capacity;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_datamatrix_capacity_obj, py_datamatrix_capacity);
+
+mp_obj_t py_datamatrix_padding(mp_obj_t self_in) {
+    return ((py_datamatrix_obj_t *) self_in)->padding;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_datamatrix_padding_obj, py_datamatrix_padding);
+
+static const mp_rom_map_elem_t py_datamatrix_locals_dict_table[] = {
     { MP_ROM_QSTR(MP_QSTR_corners), MP_ROM_PTR(&py_datamatrix_corners_obj) },
     { MP_ROM_QSTR(MP_QSTR_rect), MP_ROM_PTR(&py_datamatrix_rect_obj) },
     { MP_ROM_QSTR(MP_QSTR_x), MP_ROM_PTR(&py_datamatrix_x_obj) },
@@ -5489,18 +5462,18 @@ STATIC const mp_rom_map_elem_t py_datamatrix_locals_dict_table[] = {
     { MP_ROM_QSTR(MP_QSTR_padding), MP_ROM_PTR(&py_datamatrix_padding_obj) }
 };
 
-STATIC MP_DEFINE_CONST_DICT(py_datamatrix_locals_dict, py_datamatrix_locals_dict_table);
+static MP_DEFINE_CONST_DICT(py_datamatrix_locals_dict, py_datamatrix_locals_dict_table);
 
-static const mp_obj_type_t py_datamatrix_type = {
-    { &mp_type_type },
-    .name  = MP_QSTR_datamatrix,
-    .print = py_datamatrix_print,
-    .subscr = py_datamatrix_subscr,
-    .locals_dict = (mp_obj_t) &py_datamatrix_locals_dict
-};
+static MP_DEFINE_CONST_OBJ_TYPE(
+    py_datamatrix_type,
+    MP_QSTR_datamatrix,
+    MP_TYPE_FLAG_NONE,
+    print, py_datamatrix_print,
+    subscr, py_datamatrix_subscr,
+    locals_dict, &py_datamatrix_locals_dict
+    );
 
-static mp_obj_t py_image_find_datamatrices(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
+static mp_obj_t py_image_find_datamatrices(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
     image_t *arg_img = py_image_cobj(args[0]);
 
     rectangle_t roi;
@@ -5521,10 +5494,18 @@ static mp_obj_t py_image_find_datamatrices(uint n_args, const mp_obj_t *args, mp
         py_datamatrix_obj_t *o = m_new_obj(py_datamatrix_obj_t);
         o->base.type = &py_datamatrix_type;
         o->corners = mp_obj_new_tuple(4, (mp_obj_t [])
-            {mp_obj_new_tuple(2, (mp_obj_t []) {mp_obj_new_int(lnk_data.corners[0].x), mp_obj_new_int(lnk_data.corners[0].y)}),
-             mp_obj_new_tuple(2, (mp_obj_t []) {mp_obj_new_int(lnk_data.corners[1].x), mp_obj_new_int(lnk_data.corners[1].y)}),
-             mp_obj_new_tuple(2, (mp_obj_t []) {mp_obj_new_int(lnk_data.corners[2].x), mp_obj_new_int(lnk_data.corners[2].y)}),
-             mp_obj_new_tuple(2, (mp_obj_t []) {mp_obj_new_int(lnk_data.corners[3].x), mp_obj_new_int(lnk_data.corners[3].y)})});
+                                      {mp_obj_new_tuple(2,
+                                                        (mp_obj_t []) {mp_obj_new_int(lnk_data.corners[0].x),
+                                                                       mp_obj_new_int(lnk_data.corners[0].y)}),
+                                       mp_obj_new_tuple(2,
+                                                        (mp_obj_t []) {mp_obj_new_int(lnk_data.corners[1].x),
+                                                                       mp_obj_new_int(lnk_data.corners[1].y)}),
+                                       mp_obj_new_tuple(2,
+                                                        (mp_obj_t []) {mp_obj_new_int(lnk_data.corners[2].x),
+                                                                       mp_obj_new_int(lnk_data.corners[2].y)}),
+                                       mp_obj_new_tuple(2,
+                                                        (mp_obj_t []) {mp_obj_new_int(lnk_data.corners[3].x),
+                                                                       mp_obj_new_int(lnk_data.corners[3].y)})});
         o->x = mp_obj_new_int(lnk_data.rect.x);
         o->y = mp_obj_new_int(lnk_data.rect.y);
         o->w = mp_obj_new_int(lnk_data.rect.w);
@@ -5542,20 +5523,19 @@ static mp_obj_t py_image_find_datamatrices(uint n_args, const mp_obj_t *args, mp
 
     return objects_list;
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_find_datamatrices_obj, 1, py_image_find_datamatrices);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_find_datamatrices_obj, 1, py_image_find_datamatrices);
 #endif // IMLIB_ENABLE_DATAMATRICES
 
-#ifdef IMLIB_ENABLE_BARCODES
+#if defined(IMLIB_ENABLE_BARCODES) && (!defined(OMV_NO_GPL))
 // BarCode Object //
-#define py_barcode_obj_size 8
+#define py_barcode_obj_size    8
 typedef struct py_barcode_obj {
     mp_obj_base_t base;
     mp_obj_t corners;
     mp_obj_t x, y, w, h, payload, type, rotation, quality;
 } py_barcode_obj_t;
 
-static void py_barcode_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind)
-{
+static void py_barcode_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind) {
     py_barcode_obj_t *self = self_in;
     mp_printf(print,
               "{\"x\":%d, \"y\":%d, \"w\":%d, \"h\":%d, \"payload\":\"%s\","
@@ -5570,9 +5550,9 @@ static void py_barcode_print(const mp_print_t *print, mp_obj_t self_in, mp_print
               mp_obj_get_int(self->quality));
 }
 
-static mp_obj_t py_barcode_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t value)
-{
-    if (value == MP_OBJ_SENTINEL) { // load
+static mp_obj_t py_barcode_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t value) {
+    if (value == MP_OBJ_SENTINEL) {
+        // load
         py_barcode_obj_t *self = self_in;
         if (MP_OBJ_IS_TYPE(index, &mp_type_slice)) {
             mp_bound_slice_t slice;
@@ -5597,36 +5577,60 @@ static mp_obj_t py_barcode_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t val
     return MP_OBJ_NULL; // op not supported
 }
 
-mp_obj_t py_barcode_corners(mp_obj_t self_in) { return ((py_barcode_obj_t *) self_in)->corners; }
-mp_obj_t py_barcode_rect(mp_obj_t self_in)
-{
+mp_obj_t py_barcode_corners(mp_obj_t self_in) {
+    return ((py_barcode_obj_t *) self_in)->corners;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_barcode_corners_obj, py_barcode_corners);
+
+mp_obj_t py_barcode_rect(mp_obj_t self_in) {
     return mp_obj_new_tuple(4, (mp_obj_t []) {((py_barcode_obj_t *) self_in)->x,
                                               ((py_barcode_obj_t *) self_in)->y,
                                               ((py_barcode_obj_t *) self_in)->w,
                                               ((py_barcode_obj_t *) self_in)->h});
 }
+static MP_DEFINE_CONST_FUN_OBJ_1(py_barcode_rect_obj, py_barcode_rect);
 
-mp_obj_t py_barcode_x(mp_obj_t self_in) { return ((py_barcode_obj_t *) self_in)->x; }
-mp_obj_t py_barcode_y(mp_obj_t self_in) { return ((py_barcode_obj_t *) self_in)->y; }
-mp_obj_t py_barcode_w(mp_obj_t self_in) { return ((py_barcode_obj_t *) self_in)->w; }
-mp_obj_t py_barcode_h(mp_obj_t self_in) { return ((py_barcode_obj_t *) self_in)->h; }
-mp_obj_t py_barcode_payload_fun(mp_obj_t self_in) { return ((py_barcode_obj_t *) self_in)->payload; }
-mp_obj_t py_barcode_type_fun(mp_obj_t self_in) { return ((py_barcode_obj_t *) self_in)->type; }
-mp_obj_t py_barcode_rotation_fun(mp_obj_t self_in) { return ((py_barcode_obj_t *) self_in)->rotation; }
-mp_obj_t py_barcode_quality_fun(mp_obj_t self_in) { return ((py_barcode_obj_t *) self_in)->quality; }
+mp_obj_t py_barcode_x(mp_obj_t self_in) {
+    return ((py_barcode_obj_t *) self_in)->x;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_barcode_x_obj, py_barcode_x);
 
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_barcode_corners_obj, py_barcode_corners);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_barcode_rect_obj, py_barcode_rect);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_barcode_x_obj, py_barcode_x);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_barcode_y_obj, py_barcode_y);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_barcode_w_obj, py_barcode_w);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_barcode_h_obj, py_barcode_h);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_barcode_payload_fun_obj, py_barcode_payload_fun);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_barcode_type_fun_obj, py_barcode_type_fun);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_barcode_rotation_fun_obj, py_barcode_rotation_fun);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_barcode_quality_fun_obj, py_barcode_quality_fun);
+mp_obj_t py_barcode_y(mp_obj_t self_in) {
+    return ((py_barcode_obj_t *) self_in)->y;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_barcode_y_obj, py_barcode_y);
 
-STATIC const mp_rom_map_elem_t py_barcode_locals_dict_table[] = {
+mp_obj_t py_barcode_w(mp_obj_t self_in) {
+    return ((py_barcode_obj_t *) self_in)->w;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_barcode_w_obj, py_barcode_w);
+
+mp_obj_t py_barcode_h(mp_obj_t self_in) {
+    return ((py_barcode_obj_t *) self_in)->h;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_barcode_h_obj, py_barcode_h);
+
+mp_obj_t py_barcode_payload_fun(mp_obj_t self_in) {
+    return ((py_barcode_obj_t *) self_in)->payload;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_barcode_payload_fun_obj, py_barcode_payload_fun);
+
+mp_obj_t py_barcode_type_fun(mp_obj_t self_in) {
+    return ((py_barcode_obj_t *) self_in)->type;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_barcode_type_fun_obj, py_barcode_type_fun);
+
+mp_obj_t py_barcode_rotation_fun(mp_obj_t self_in) {
+    return ((py_barcode_obj_t *) self_in)->rotation;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_barcode_rotation_fun_obj, py_barcode_rotation_fun);
+
+mp_obj_t py_barcode_quality_fun(mp_obj_t self_in) {
+    return ((py_barcode_obj_t *) self_in)->quality;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_barcode_quality_fun_obj, py_barcode_quality_fun);
+
+static const mp_rom_map_elem_t py_barcode_locals_dict_table[] = {
     { MP_ROM_QSTR(MP_QSTR_corners), MP_ROM_PTR(&py_barcode_corners_obj) },
     { MP_ROM_QSTR(MP_QSTR_rect), MP_ROM_PTR(&py_barcode_rect_obj) },
     { MP_ROM_QSTR(MP_QSTR_x), MP_ROM_PTR(&py_barcode_x_obj) },
@@ -5639,18 +5643,18 @@ STATIC const mp_rom_map_elem_t py_barcode_locals_dict_table[] = {
     { MP_ROM_QSTR(MP_QSTR_quality), MP_ROM_PTR(&py_barcode_quality_fun_obj) }
 };
 
-STATIC MP_DEFINE_CONST_DICT(py_barcode_locals_dict, py_barcode_locals_dict_table);
+static MP_DEFINE_CONST_DICT(py_barcode_locals_dict, py_barcode_locals_dict_table);
 
-static const mp_obj_type_t py_barcode_type = {
-    { &mp_type_type },
-    .name  = MP_QSTR_barcode,
-    .print = py_barcode_print,
-    .subscr = py_barcode_subscr,
-    .locals_dict = (mp_obj_t) &py_barcode_locals_dict
-};
+static MP_DEFINE_CONST_OBJ_TYPE(
+    py_barcode_type,
+    MP_QSTR_barcode,
+    MP_TYPE_FLAG_NONE,
+    print, py_barcode_print,
+    subscr, py_barcode_subscr,
+    locals_dict, &py_barcode_locals_dict
+    );
 
-static mp_obj_t py_image_find_barcodes(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
+static mp_obj_t py_image_find_barcodes(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
     image_t *arg_img = py_image_cobj(args[0]);
 
     rectangle_t roi;
@@ -5669,10 +5673,18 @@ static mp_obj_t py_image_find_barcodes(uint n_args, const mp_obj_t *args, mp_map
         py_barcode_obj_t *o = m_new_obj(py_barcode_obj_t);
         o->base.type = &py_barcode_type;
         o->corners = mp_obj_new_tuple(4, (mp_obj_t [])
-            {mp_obj_new_tuple(2, (mp_obj_t []) {mp_obj_new_int(lnk_data.corners[0].x), mp_obj_new_int(lnk_data.corners[0].y)}),
-             mp_obj_new_tuple(2, (mp_obj_t []) {mp_obj_new_int(lnk_data.corners[1].x), mp_obj_new_int(lnk_data.corners[1].y)}),
-             mp_obj_new_tuple(2, (mp_obj_t []) {mp_obj_new_int(lnk_data.corners[2].x), mp_obj_new_int(lnk_data.corners[2].y)}),
-             mp_obj_new_tuple(2, (mp_obj_t []) {mp_obj_new_int(lnk_data.corners[3].x), mp_obj_new_int(lnk_data.corners[3].y)})});
+                                      {mp_obj_new_tuple(2,
+                                                        (mp_obj_t []) {mp_obj_new_int(lnk_data.corners[0].x),
+                                                                       mp_obj_new_int(lnk_data.corners[0].y)}),
+                                       mp_obj_new_tuple(2,
+                                                        (mp_obj_t []) {mp_obj_new_int(lnk_data.corners[1].x),
+                                                                       mp_obj_new_int(lnk_data.corners[1].y)}),
+                                       mp_obj_new_tuple(2,
+                                                        (mp_obj_t []) {mp_obj_new_int(lnk_data.corners[2].x),
+                                                                       mp_obj_new_int(lnk_data.corners[2].y)}),
+                                       mp_obj_new_tuple(2,
+                                                        (mp_obj_t []) {mp_obj_new_int(lnk_data.corners[3].x),
+                                                                       mp_obj_new_int(lnk_data.corners[3].y)})});
         o->x = mp_obj_new_int(lnk_data.rect.x);
         o->y = mp_obj_new_int(lnk_data.rect.y);
         o->w = mp_obj_new_int(lnk_data.rect.w);
@@ -5688,19 +5700,18 @@ static mp_obj_t py_image_find_barcodes(uint n_args, const mp_obj_t *args, mp_map
 
     return objects_list;
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_find_barcodes_obj, 1, py_image_find_barcodes);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_find_barcodes_obj, 1, py_image_find_barcodes);
 #endif // IMLIB_ENABLE_BARCODES
 
 #ifdef IMLIB_ENABLE_FIND_DISPLACEMENT
 // Displacement Object //
-#define py_displacement_obj_size 5
+#define py_displacement_obj_size    5
 typedef struct py_displacement_obj {
     mp_obj_base_t base;
     mp_obj_t x_translation, y_translation, rotation, scale, response;
 } py_displacement_obj_t;
 
-static void py_displacement_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind)
-{
+static void py_displacement_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind) {
     py_displacement_obj_t *self = self_in;
     mp_printf(print,
               "{\"x_translation\":%f, \"y_translation\":%f, \"rotation\":%f, \"scale\":%f, \"response\":%f}",
@@ -5711,9 +5722,9 @@ static void py_displacement_print(const mp_print_t *print, mp_obj_t self_in, mp_
               (double) mp_obj_get_float(self->response));
 }
 
-static mp_obj_t py_displacement_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t value)
-{
-    if (value == MP_OBJ_SENTINEL) { // load
+static mp_obj_t py_displacement_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t value) {
+    if (value == MP_OBJ_SENTINEL) {
+        // load
         py_displacement_obj_t *self = self_in;
         if (MP_OBJ_IS_TYPE(index, &mp_type_slice)) {
             mp_bound_slice_t slice;
@@ -5735,19 +5746,32 @@ static mp_obj_t py_displacement_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_
     return MP_OBJ_NULL; // op not supported
 }
 
-mp_obj_t py_displacement_x_translation(mp_obj_t self_in) { return ((py_displacement_obj_t *) self_in)->x_translation; }
-mp_obj_t py_displacement_y_translation(mp_obj_t self_in) { return ((py_displacement_obj_t *) self_in)->y_translation; }
-mp_obj_t py_displacement_rotation(mp_obj_t self_in) { return ((py_displacement_obj_t *) self_in)->rotation; }
-mp_obj_t py_displacement_scale(mp_obj_t self_in) { return ((py_displacement_obj_t *) self_in)->scale; }
-mp_obj_t py_displacement_response(mp_obj_t self_in) { return ((py_displacement_obj_t *) self_in)->response; }
+mp_obj_t py_displacement_x_translation(mp_obj_t self_in) {
+    return ((py_displacement_obj_t *) self_in)->x_translation;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_displacement_x_translation_obj, py_displacement_x_translation);
 
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_displacement_x_translation_obj, py_displacement_x_translation);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_displacement_y_translation_obj, py_displacement_y_translation);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_displacement_rotation_obj, py_displacement_rotation);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_displacement_scale_obj, py_displacement_scale);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_displacement_response_obj, py_displacement_response);
+mp_obj_t py_displacement_y_translation(mp_obj_t self_in) {
+    return ((py_displacement_obj_t *) self_in)->y_translation;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_displacement_y_translation_obj, py_displacement_y_translation);
 
-STATIC const mp_rom_map_elem_t py_displacement_locals_dict_table[] = {
+mp_obj_t py_displacement_rotation(mp_obj_t self_in) {
+    return ((py_displacement_obj_t *) self_in)->rotation;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_displacement_rotation_obj, py_displacement_rotation);
+
+mp_obj_t py_displacement_scale(mp_obj_t self_in) {
+    return ((py_displacement_obj_t *) self_in)->scale;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_displacement_scale_obj, py_displacement_scale);
+
+mp_obj_t py_displacement_response(mp_obj_t self_in) {
+    return ((py_displacement_obj_t *) self_in)->response;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(py_displacement_response_obj, py_displacement_response);
+
+static const mp_rom_map_elem_t py_displacement_locals_dict_table[] = {
     { MP_ROM_QSTR(MP_QSTR_x_translation), MP_ROM_PTR(&py_displacement_x_translation_obj) },
     { MP_ROM_QSTR(MP_QSTR_y_translation), MP_ROM_PTR(&py_displacement_y_translation_obj) },
     { MP_ROM_QSTR(MP_QSTR_rotation), MP_ROM_PTR(&py_displacement_rotation_obj) },
@@ -5755,35 +5779,38 @@ STATIC const mp_rom_map_elem_t py_displacement_locals_dict_table[] = {
     { MP_ROM_QSTR(MP_QSTR_response), MP_ROM_PTR(&py_displacement_response_obj) }
 };
 
-STATIC MP_DEFINE_CONST_DICT(py_displacement_locals_dict, py_displacement_locals_dict_table);
+static MP_DEFINE_CONST_DICT(py_displacement_locals_dict, py_displacement_locals_dict_table);
 
-static const mp_obj_type_t py_displacement_type = {
-    { &mp_type_type },
-    .name  = MP_QSTR_displacement,
-    .print = py_displacement_print,
-    .subscr = py_displacement_subscr,
-    .locals_dict = (mp_obj_t) &py_displacement_locals_dict
-};
+static MP_DEFINE_CONST_OBJ_TYPE(
+    py_displacement_type,
+    MP_QSTR_displacement,
+    MP_TYPE_FLAG_NONE,
+    print, py_displacement_print,
+    subscr, py_displacement_subscr,
+    locals_dict, &py_displacement_locals_dict
+    );
 
-static mp_obj_t py_image_find_displacement(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    image_t *arg_img = py_helper_arg_to_image_mutable(args[0]);
-    image_t *arg_template_img = py_helper_arg_to_image_mutable(args[1]);
+static mp_obj_t py_image_find_displacement(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
+    image_t *arg_img = py_helper_arg_to_image(args[0], ARG_IMAGE_MUTABLE);
+    image_t *arg_template_img = py_helper_arg_to_image(args[1], ARG_IMAGE_MUTABLE);
 
     rectangle_t roi;
     py_helper_keyword_rectangle_roi(arg_img, n_args, args, 2, kw_args, &roi);
 
     rectangle_t template_roi;
-    py_helper_keyword_rectangle(arg_template_img, n_args, args, 3, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_template_roi), &template_roi);
+    py_helper_keyword_rectangle(arg_template_img, n_args, args, 3, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_template_roi),
+                                &template_roi);
 
     PY_ASSERT_FALSE_MSG((roi.w != template_roi.w) || (roi.h != template_roi.h), "ROI(w,h) != TEMPLATE_ROI(w,h)");
 
     bool logpolar = py_helper_keyword_int(n_args, args, 4, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_logpolar), false);
-    bool fix_rotation_scale = py_helper_keyword_int(n_args, args, 5, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_fix_rotation_scale), false);
+    bool fix_rotation_scale =
+        py_helper_keyword_int(n_args, args, 5, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_fix_rotation_scale), false);
 
     float x, y, r, s, response;
     fb_alloc_mark();
-    imlib_phasecorrelate(arg_img, arg_template_img, &roi, &template_roi, logpolar, fix_rotation_scale, &x, &y, &r, &s, &response);
+    imlib_phasecorrelate(arg_img, arg_template_img, &roi, &template_roi, logpolar, fix_rotation_scale, &x, &y, &r, &s,
+                         &response);
     fb_alloc_free_till_mark();
 
     py_displacement_obj_t *o = m_new_obj(py_displacement_obj_t);
@@ -5796,14 +5823,13 @@ static mp_obj_t py_image_find_displacement(uint n_args, const mp_obj_t *args, mp
 
     return o;
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_find_displacement_obj, 2, py_image_find_displacement);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_find_displacement_obj, 2, py_image_find_displacement);
 #endif // IMLIB_ENABLE_FIND_DISPLACEMENT
 
 #ifdef IMLIB_FIND_TEMPLATE
-static mp_obj_t py_image_find_template(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    image_t *arg_img = py_helper_arg_to_image_grayscale(args[0]);
-    image_t *arg_template = py_helper_arg_to_image_grayscale(args[1]);
+static mp_obj_t py_image_find_template(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
+    image_t *arg_img = py_helper_arg_to_image(args[0], ARG_IMAGE_GRAYSCALE);
+    image_t *arg_template = py_helper_arg_to_image(args[1], ARG_IMAGE_GRAYSCALE);
     float arg_thresh = mp_obj_get_float(args[2]);
 
     rectangle_t roi;
@@ -5811,11 +5837,11 @@ static mp_obj_t py_image_find_template(uint n_args, const mp_obj_t *args, mp_map
 
     // Make sure ROI is bigger than or equal to template size
     PY_ASSERT_TRUE_MSG((roi.w >= arg_template->w && roi.h >= arg_template->h),
-            "Region of interest is smaller than template!");
+                       "Region of interest is smaller than template!");
 
     // Make sure ROI is smaller than or equal to image size
     PY_ASSERT_TRUE_MSG(((roi.x + roi.w) <= arg_img->w && (roi.y + roi.h) <= arg_img->h),
-            "Region of interest is bigger than image!");
+                       "Region of interest is bigger than image!");
 
     int step = py_helper_keyword_int(n_args, args, 4, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_step), 2);
     int search = py_helper_keyword_int(n_args, args, 5, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_search), SEARCH_EX);
@@ -5842,12 +5868,12 @@ static mp_obj_t py_image_find_template(uint n_args, const mp_obj_t *args, mp_map
     }
     return mp_const_none;
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_find_template_obj, 3, py_image_find_template);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_find_template_obj, 3, py_image_find_template);
 #endif // IMLIB_FIND_TEMPLATE
 
-static mp_obj_t py_image_find_features(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    image_t *arg_img = py_helper_arg_to_image_mutable(args[0]);
+#ifdef IMLIB_ENABLE_FEATURES
+static mp_obj_t py_image_find_features(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
+    image_t *arg_img = py_helper_arg_to_image(args[0], ARG_IMAGE_MUTABLE);
     cascade_t *cascade = py_cascade_cobj(args[1]);
     cascade->threshold = py_helper_keyword_float(n_args, args, 2, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_threshold), 0.5f);
     cascade->scale_factor = py_helper_keyword_float(n_args, args, 3, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_scale_factor), 1.5f);
@@ -5857,7 +5883,7 @@ static mp_obj_t py_image_find_features(uint n_args, const mp_obj_t *args, mp_map
 
     // Make sure ROI is bigger than feature size
     PY_ASSERT_TRUE_MSG((roi.w > cascade->window.w && roi.h > cascade->window.h),
-            "Region of interest is smaller than detector window!");
+                       "Region of interest is smaller than detector window!");
 
     // Detect objects
     fb_alloc_mark();
@@ -5866,7 +5892,7 @@ static mp_obj_t py_image_find_features(uint n_args, const mp_obj_t *args, mp_map
 
     // Add detected objects to a new Python list...
     mp_obj_t objects_list = mp_obj_new_list(0, NULL);
-    for (int i=0; i<array_length(objects_array); i++) {
+    for (int i = 0; i < array_length(objects_array); i++) {
         rectangle_t *r = array_at(objects_array, i);
         mp_obj_t rec_obj[4] = {
             mp_obj_new_int(r->x),
@@ -5879,11 +5905,11 @@ static mp_obj_t py_image_find_features(uint n_args, const mp_obj_t *args, mp_map
     array_free(objects_array);
     return objects_list;
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_find_features_obj, 2, py_image_find_features);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_find_features_obj, 2, py_image_find_features);
+#endif // IMLIB_ENABLE_FEATURES
 
-static mp_obj_t py_image_find_eye(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    image_t *arg_img = py_helper_arg_to_image_grayscale(args[0]);
+static mp_obj_t py_image_find_eye(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
+    image_t *arg_img = py_helper_arg_to_image(args[0], ARG_IMAGE_GRAYSCALE);
 
     rectangle_t roi;
     py_helper_keyword_rectangle_roi(arg_img, n_args, args, 1, kw_args, &roi);
@@ -5898,12 +5924,11 @@ static mp_obj_t py_image_find_eye(uint n_args, const mp_obj_t *args, mp_map_t *k
 
     return mp_obj_new_tuple(2, eye_obj);
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_find_eye_obj, 2, py_image_find_eye);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_find_eye_obj, 2, py_image_find_eye);
 
 #ifdef IMLIB_ENABLE_FIND_LBP
-static mp_obj_t py_image_find_lbp(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    image_t *arg_img = py_helper_arg_to_image_grayscale(args[0]);
+static mp_obj_t py_image_find_lbp(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
+    image_t *arg_img = py_helper_arg_to_image(args[0], ARG_IMAGE_GRAYSCALE);
 
     rectangle_t roi;
     py_helper_keyword_rectangle_roi(arg_img, n_args, args, 1, kw_args, &roi);
@@ -5913,13 +5938,12 @@ static mp_obj_t py_image_find_lbp(uint n_args, const mp_obj_t *args, mp_map_t *k
     lbp_obj->hist = imlib_lbp_desc(arg_img, &roi);
     return lbp_obj;
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_find_lbp_obj, 2, py_image_find_lbp);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_find_lbp_obj, 2, py_image_find_lbp);
 #endif // IMLIB_ENABLE_FIND_LBP
 
 #ifdef IMLIB_ENABLE_FIND_KEYPOINTS
-static mp_obj_t py_image_find_keypoints(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    image_t *arg_img = py_helper_arg_to_image_mutable(args[0]);
+static mp_obj_t py_image_find_keypoints(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
+    image_t *arg_img = py_helper_arg_to_image(args[0], ARG_IMAGE_MUTABLE);
 
     rectangle_t roi;
     py_helper_keyword_rectangle_roi(arg_img, n_args, args, 1, kw_args, &roi);
@@ -5955,13 +5979,12 @@ static mp_obj_t py_image_find_keypoints(uint n_args, const mp_obj_t *args, mp_ma
     }
     return mp_const_none;
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_find_keypoints_obj, 1, py_image_find_keypoints);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_find_keypoints_obj, 1, py_image_find_keypoints);
 #endif // IMLIB_ENABLE_FIND_KEYPOINTS
 
 #ifdef IMLIB_ENABLE_BINARY_OPS
-static mp_obj_t py_image_find_edges(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    image_t *arg_img = py_helper_arg_to_image_grayscale(args[0]);
+static mp_obj_t py_image_find_edges(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
+    image_t *arg_img = py_helper_arg_to_image(args[0], ARG_IMAGE_GRAYSCALE);
     edge_detector_t edge_type = mp_obj_get_int(args[1]);
 
     rectangle_t roi;
@@ -5995,13 +6018,12 @@ static mp_obj_t py_image_find_edges(uint n_args, const mp_obj_t *args, mp_map_t 
 
     return args[0];
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_find_edges_obj, 2, py_image_find_edges);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_find_edges_obj, 2, py_image_find_edges);
 #endif
 
 #ifdef IMLIB_ENABLE_HOG
-static mp_obj_t py_image_find_hog(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    image_t *arg_img = py_helper_arg_to_image_grayscale(args[0]);
+static mp_obj_t py_image_find_hog(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
+    image_t *arg_img = py_helper_arg_to_image(args[0], ARG_IMAGE_GRAYSCALE);
 
     rectangle_t roi;
     py_helper_keyword_rectangle_roi(arg_img, n_args, args, 1, kw_args, &roi);
@@ -6014,13 +6036,12 @@ static mp_obj_t py_image_find_hog(uint n_args, const mp_obj_t *args, mp_map_t *k
 
     return args[0];
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_find_hog_obj, 1, py_image_find_hog);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_find_hog_obj, 1, py_image_find_hog);
 #endif // IMLIB_ENABLE_HOG
 
 #ifdef IMLIB_ENABLE_SELECTIVE_SEARCH
-static mp_obj_t py_image_selective_search(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    image_t *img = py_helper_arg_to_image_mutable(args[0]);
+static mp_obj_t py_image_selective_search(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
+    image_t *img = py_helper_arg_to_image(args[0], ARG_IMAGE_MUTABLE);
     int t = py_helper_keyword_int(n_args, args, 1, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_threshold), 500);
     int s = py_helper_keyword_int(n_args, args, 2, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_size), 20);
     float a1 = py_helper_keyword_float(n_args, args, 3, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_a1), 1.0f);
@@ -6030,7 +6051,7 @@ static mp_obj_t py_image_selective_search(uint n_args, const mp_obj_t *args, mp_
 
     // Add proposals to a new Python list...
     mp_obj_t proposals_list = mp_obj_new_list(0, NULL);
-    for (int i=0; i<array_length(proposals_array); i++) {
+    for (int i = 0; i < array_length(proposals_array); i++) {
         rectangle_t *r = array_at(proposals_array, i);
         mp_obj_t rec_obj[4] = {
             mp_obj_new_int(r->x),
@@ -6044,13 +6065,12 @@ static mp_obj_t py_image_selective_search(uint n_args, const mp_obj_t *args, mp_
     array_free(proposals_array);
     return proposals_list;
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_selective_search_obj, 1, py_image_selective_search);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_selective_search_obj, 1, py_image_selective_search);
 #endif // IMLIB_ENABLE_SELECTIVE_SEARCH
 
 #ifdef IMLIB_ENABLE_STEREO_DISPARITY
-static mp_obj_t py_image_stereo_disparity(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    image_t *img = py_helper_arg_to_image_grayscale(args[0]);
+static mp_obj_t py_image_stereo_disparity(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
+    image_t *img = py_helper_arg_to_image(args[0], ARG_IMAGE_GRAYSCALE);
 
     if (img->w % 2) {
         mp_raise_msg(&mp_type_ValueError, MP_ERROR_TEXT("Image width must be even!"));
@@ -6074,8 +6094,147 @@ static mp_obj_t py_image_stereo_disparity(uint n_args, const mp_obj_t *args, mp_
 
     return args[0];
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_stereo_disparity_obj, 1, py_image_stereo_disparity);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_stereo_disparity_obj, 1, py_image_stereo_disparity);
 #endif // IMLIB_ENABLE_STEREO_DISPARITY
+
+mp_obj_t py_image_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *all_args) {
+    enum { ARG_arg, ARG_height, ARG_pixformat, ARG_buffer, ARG_copy_to_fb, ARG_shape, ARG_strides, ARG_scale};
+    static const mp_arg_t allowed_args[] = {
+        { MP_QSTR_arg,          MP_ARG_REQUIRED | MP_ARG_OBJ },
+        { MP_QSTR_height,       MP_ARG_INT, {.u_int = -1} },
+        { MP_QSTR_pixformat,    MP_ARG_INT, {.u_int = -1} },
+        { MP_QSTR_buffer,       MP_ARG_OBJ | MP_ARG_KW_ONLY, {.u_rom_obj = MP_ROM_NONE} },
+        { MP_QSTR_copy_to_fb,   MP_ARG_BOOL | MP_ARG_KW_ONLY, {.u_bool = false} },
+    };
+
+    mp_arg_val_t args[MP_ARRAY_SIZE(allowed_args)];
+    mp_arg_parse_all_kw_array(n_args, n_kw, all_args, MP_ARRAY_SIZE(allowed_args), allowed_args, args);
+
+    image_t image = {0};
+
+    if (mp_obj_is_str(args[ARG_arg].u_obj)) {
+        #if defined(IMLIB_ENABLE_IMAGE_FILE_IO)
+        FIL fp;
+        img_read_settings_t rs;
+        const char *path = mp_obj_str_get_str(args[ARG_arg].u_obj);
+
+        fb_alloc_mark();
+        imlib_read_geometry(&fp, &image, path, &rs);
+        file_close(&fp);
+
+        if (args[ARG_copy_to_fb].u_bool) {
+            py_helper_set_to_framebuffer(&image);
+        } else {
+            image_xalloc(&image, image_size(&image));
+        }
+
+        imlib_load_image(&image, path);
+        fb_alloc_free_till_mark();
+        #else
+        mp_raise_msg(&mp_type_OSError, MP_ERROR_TEXT("Image I/O is not supported"));
+        #endif // IMLIB_ENABLE_IMAGE_FILE_IO
+    #if defined(MODULE_ULAB_ENABLED) && (ULAB_MAX_DIMS >= 3)
+    } else if (MP_OBJ_IS_TYPE(args[ARG_arg].u_obj, &ulab_ndarray_type)) {
+        ndarray_obj_t *array = MP_OBJ_TO_PTR(args[ARG_arg].u_obj);
+
+        if (array->dtype != NDARRAY_FLOAT) {
+            mp_raise_msg(&mp_type_ValueError, MP_ERROR_TEXT("Expected a ndarray with dtype float"));
+        }
+
+        if (!((array->ndim == 2) || ((array->ndim == 3) && (array->shape[ULAB_MAX_DIMS - 1] == 3)))) {
+            mp_raise_msg(&mp_type_ValueError,
+                         MP_ERROR_TEXT("Expected a ndarray with shape (height, width) or (height, width, 3"));
+        }
+
+        if (array->ndim == 2) {
+            image.w = array->shape[ULAB_MAX_DIMS - 1];
+            image.h = array->shape[ULAB_MAX_DIMS - 2];
+            image.pixfmt = PIXFORMAT_GRAYSCALE;
+        } else {
+            image.w = array->shape[ULAB_MAX_DIMS - 2];
+            image.h = array->shape[ULAB_MAX_DIMS - 3];
+            image.pixfmt = PIXFORMAT_RGB565;
+        }
+
+        if (args[ARG_copy_to_fb].u_bool) {
+            py_helper_set_to_framebuffer(&image);
+        } else if (args[ARG_buffer].u_obj != mp_const_none) {
+            mp_buffer_info_t bufinfo = {0};
+            mp_get_buffer_raise(args[ARG_buffer].u_obj, &bufinfo, MP_BUFFER_WRITE);
+            image.data = bufinfo.buf;
+            if (image_size(&image) > bufinfo.len) {
+                mp_raise_ValueError(MP_ERROR_TEXT("Buffer is too small"));
+            }
+        } else {
+            image_xalloc(&image, image_size(&image));
+        }
+
+        mp_float_t *farray = (mp_float_t *) array->array;
+
+        if (image.pixfmt == PIXFORMAT_GRAYSCALE) {
+            int y_stride = array->strides[ULAB_MAX_DIMS - 2] / array->itemsize;
+            int x_stride = array->strides[ULAB_MAX_DIMS - 1] / array->itemsize;
+            for (int y = 0, i = 0; y < image.h; y++, i += y_stride) {
+                uint8_t *row = IMAGE_COMPUTE_GRAYSCALE_PIXEL_ROW_PTR(&image, y);
+                for (int x = 0, j = i; x < image.w; x++, j += x_stride) {
+                    IMAGE_PUT_GRAYSCALE_PIXEL_FAST(row, x, __USAT(fast_roundf(farray[j]), 8));
+                }
+            }
+        } else {
+            int y_stride = array->strides[ULAB_MAX_DIMS - 3] / array->itemsize;
+            int x_stride = array->strides[ULAB_MAX_DIMS - 2] / array->itemsize;
+            int c_stride = array->strides[ULAB_MAX_DIMS - 1] / array->itemsize;
+            for (int y = 0, i = 0; y < image.h; y++, i += y_stride) {
+                uint16_t *row = IMAGE_COMPUTE_RGB565_PIXEL_ROW_PTR(&image, y);
+                for (int x = 0, j = i; x < image.w; x++, j += x_stride) {
+                    int r = __USAT(fast_roundf(farray[j]), 8);
+                    int g = __USAT(fast_roundf(farray[j + c_stride]), 8);
+                    int b = __USAT(fast_roundf(farray[j + (c_stride * 2)]), 8);
+                    IMAGE_PUT_RGB565_PIXEL_FAST(row, x, COLOR_R8_G8_B8_TO_RGB565(r, g, b));
+                }
+            }
+        }
+    #endif
+    } else {
+        image.w = mp_obj_get_int(args[ARG_arg].u_obj);
+        PY_ASSERT_TRUE_MSG(image.w > 0, "Image width must be > 0");
+
+        image.h = args[ARG_height].u_int;
+        PY_ASSERT_TRUE_MSG(image.h > 0, "Image height must be > 0");
+
+        image.pixfmt = args[ARG_pixformat].u_int;
+        PY_ASSERT_TRUE_MSG(IMLIB_PIXFORMAT_IS_VALID(image.pixfmt), "Pixel format is not set or unsupported");
+
+        mp_buffer_info_t bufinfo = {0};
+        if (args[ARG_buffer].u_obj != mp_const_none) {
+            mp_get_buffer_raise(args[ARG_buffer].u_obj, &bufinfo, MP_BUFFER_READ);
+            image.size = bufinfo.len;
+        } else if (image.is_compressed) {
+            mp_raise_ValueError(MP_ERROR_TEXT("Expected an image buffer"));
+        }
+
+        if (args[ARG_copy_to_fb].u_bool) {
+            py_helper_set_to_framebuffer(&image);
+            if (bufinfo.buf != NULL) {
+                memcpy(image.data, bufinfo.buf, bufinfo.len);
+            } else {
+                memset(image.data, 0, image_size(&image));
+            }
+        } else if (bufinfo.buf != NULL) {
+            image.data = bufinfo.buf;
+            if (image_size(&image) > bufinfo.len) {
+                mp_raise_ValueError(MP_ERROR_TEXT("Buffer is too small"));
+            }
+        } else {
+            image_xalloc0(&image, image_size(&image));
+        }
+    }
+
+    if (args[ARG_copy_to_fb].u_bool) {
+        framebuffer_update_jpeg_buffer();
+    }
+    return py_image_from_struct(&image);
+}
 
 static const mp_rom_map_elem_t locals_dict_table[] = {
     /* Basic Methods */
@@ -6084,35 +6243,26 @@ static const mp_rom_map_elem_t locals_dict_table[] = {
     {MP_ROM_QSTR(MP_QSTR_format),              MP_ROM_PTR(&py_image_format_obj)},
     {MP_ROM_QSTR(MP_QSTR_size),                MP_ROM_PTR(&py_image_size_obj)},
     {MP_ROM_QSTR(MP_QSTR_bytearray),           MP_ROM_PTR(&py_image_bytearray_obj)},
+    #if defined(MODULE_ULAB_ENABLED) && (ULAB_MAX_DIMS == 4)
+    {MP_ROM_QSTR(MP_QSTR_to_ndarray),          MP_ROM_PTR(&py_image_to_ndarray_obj)},
+    #endif
     {MP_ROM_QSTR(MP_QSTR_get_pixel),           MP_ROM_PTR(&py_image_get_pixel_obj)},
     {MP_ROM_QSTR(MP_QSTR_set_pixel),           MP_ROM_PTR(&py_image_set_pixel_obj)},
-#ifdef IMLIB_ENABLE_MEAN_POOLING
-    {MP_ROM_QSTR(MP_QSTR_mean_pool),           MP_ROM_PTR(&py_image_mean_pool_obj)},
-    {MP_ROM_QSTR(MP_QSTR_mean_pooled),         MP_ROM_PTR(&py_image_mean_pooled_obj)},
-#else
-    {MP_ROM_QSTR(MP_QSTR_mean_pool),           MP_ROM_PTR(&py_func_unavailable_obj)},
-    {MP_ROM_QSTR(MP_QSTR_mean_pooled),         MP_ROM_PTR(&py_func_unavailable_obj)},
-#endif
-#ifdef IMLIB_ENABLE_MIDPOINT_POOLING
-    {MP_ROM_QSTR(MP_QSTR_midpoint_pool),       MP_ROM_PTR(&py_image_midpoint_pool_obj)},
-    {MP_ROM_QSTR(MP_QSTR_midpoint_pooled),     MP_ROM_PTR(&py_image_midpoint_pooled_obj)},
-#else
-    {MP_ROM_QSTR(MP_QSTR_midpoint_pool),       MP_ROM_PTR(&py_func_unavailable_obj)},
-    {MP_ROM_QSTR(MP_QSTR_midpoint_pooled),     MP_ROM_PTR(&py_func_unavailable_obj)},
-#endif
     {MP_ROM_QSTR(MP_QSTR_to_bitmap),           MP_ROM_PTR(&py_image_to_bitmap_obj)},
     {MP_ROM_QSTR(MP_QSTR_to_grayscale),        MP_ROM_PTR(&py_image_to_grayscale_obj)},
     {MP_ROM_QSTR(MP_QSTR_to_rgb565),           MP_ROM_PTR(&py_image_to_rgb565_obj)},
     {MP_ROM_QSTR(MP_QSTR_to_rainbow),          MP_ROM_PTR(&py_image_to_rainbow_obj)},
     {MP_ROM_QSTR(MP_QSTR_to_ironbow),          MP_ROM_PTR(&py_image_to_ironbow_obj)},
+    #if (MICROPY_PY_TOF == 1)
+    {MP_ROM_QSTR(MP_QSTR_to_depth),            MP_ROM_PTR(&py_image_to_depth_obj)},
+    #endif // MICROPY_PY_TOF == 1
+    #if (OMV_GENX320_ENABLE == 1)
+    {MP_ROM_QSTR(MP_QSTR_to_evt_dark),         MP_ROM_PTR(&py_image_to_evt_dark_obj)},
+    {MP_ROM_QSTR(MP_QSTR_to_evt_light),        MP_ROM_PTR(&py_image_to_evt_light_obj)},
+    #endif // OMV_GENX320_ENABLE == 1
     {MP_ROM_QSTR(MP_QSTR_to_jpeg),             MP_ROM_PTR(&py_image_to_jpeg_obj)},
     {MP_ROM_QSTR(MP_QSTR_to_png),              MP_ROM_PTR(&py_image_to_png_obj)},
-    {MP_ROM_QSTR(MP_QSTR_compress),            MP_ROM_PTR(&py_image_compress_obj)},
-    {MP_ROM_QSTR(MP_QSTR_compress_for_ide),    MP_ROM_PTR(&py_image_compress_for_ide_obj)},
-    {MP_ROM_QSTR(MP_QSTR_compressed),          MP_ROM_PTR(&py_image_compressed_obj)},
-    {MP_ROM_QSTR(MP_QSTR_compressed_for_ide),  MP_ROM_PTR(&py_image_compressed_for_ide_obj)},
-    {MP_ROM_QSTR(MP_QSTR_jpeg_encode_for_ide), MP_ROM_PTR(&py_image_compress_for_ide_obj)},
-    {MP_ROM_QSTR(MP_QSTR_jpeg_encoded_for_ide),MP_ROM_PTR(&py_image_compressed_for_ide_obj)},
+    {MP_ROM_QSTR(MP_QSTR_compress),            MP_ROM_PTR(&py_image_to_jpeg_obj)},
     {MP_ROM_QSTR(MP_QSTR_copy),                MP_ROM_PTR(&py_image_copy_obj)},
     {MP_ROM_QSTR(MP_QSTR_crop),                MP_ROM_PTR(&py_image_crop_obj)},
     {MP_ROM_QSTR(MP_QSTR_scale),               MP_ROM_PTR(&py_image_crop_obj)},
@@ -6133,29 +6283,29 @@ static const mp_rom_map_elem_t locals_dict_table[] = {
     {MP_ROM_QSTR(MP_QSTR_draw_arrow),          MP_ROM_PTR(&py_image_draw_arrow_obj)},
     {MP_ROM_QSTR(MP_QSTR_draw_edges),          MP_ROM_PTR(&py_image_draw_edges_obj)},
     {MP_ROM_QSTR(MP_QSTR_draw_image),          MP_ROM_PTR(&py_image_draw_image_obj)},
-#ifdef IMLIB_ENABLE_FLOOD_FILL
+    #ifdef IMLIB_ENABLE_FLOOD_FILL
     {MP_ROM_QSTR(MP_QSTR_flood_fill),          MP_ROM_PTR(&py_image_flood_fill_obj)},
-#else
+    #else
     {MP_ROM_QSTR(MP_QSTR_flood_fill),          MP_ROM_PTR(&py_func_unavailable_obj)},
-#endif
+    #endif
     {MP_ROM_QSTR(MP_QSTR_draw_keypoints),      MP_ROM_PTR(&py_image_draw_keypoints_obj)},
     {MP_ROM_QSTR(MP_QSTR_mask_rectangle),      MP_ROM_PTR(&py_image_mask_rectangle_obj)},
     {MP_ROM_QSTR(MP_QSTR_mask_circle),         MP_ROM_PTR(&py_image_mask_circle_obj)},
     {MP_ROM_QSTR(MP_QSTR_mask_ellipse),        MP_ROM_PTR(&py_image_mask_ellipse_obj)},
     /* ISP Methods */
-#ifdef IMLIB_ENABLE_ISP_OPS
+    #ifdef IMLIB_ENABLE_ISP_OPS
     {MP_ROM_QSTR(MP_QSTR_awb),                 MP_ROM_PTR(&py_awb_obj)},
     {MP_ROM_QSTR(MP_QSTR_ccm),                 MP_ROM_PTR(&py_ccm_obj)},
     {MP_ROM_QSTR(MP_QSTR_gamma),               MP_ROM_PTR(&py_image_gamma_obj)},
     {MP_ROM_QSTR(MP_QSTR_gamma_corr),          MP_ROM_PTR(&py_image_gamma_obj)},
-#else
+    #else
     {MP_ROM_QSTR(MP_QSTR_awb),                 MP_ROM_PTR(&py_func_unavailable_obj)},
     {MP_ROM_QSTR(MP_QSTR_ccm),                 MP_ROM_PTR(&py_func_unavailable_obj)},
     {MP_ROM_QSTR(MP_QSTR_gamma),               MP_ROM_PTR(&py_func_unavailable_obj)},
     {MP_ROM_QSTR(MP_QSTR_gamma_corr),          MP_ROM_PTR(&py_func_unavailable_obj)},
-#endif // IMLIB_ENABLE_ISP_OPS
+    #endif // IMLIB_ENABLE_ISP_OPS
     /* Binary Methods */
-#ifdef IMLIB_ENABLE_BINARY_OPS
+    #ifdef IMLIB_ENABLE_BINARY_OPS
     {MP_ROM_QSTR(MP_QSTR_binary),              MP_ROM_PTR(&py_image_binary_obj)},
     {MP_ROM_QSTR(MP_QSTR_invert),              MP_ROM_PTR(&py_image_invert_obj)},
     {MP_ROM_QSTR(MP_QSTR_and),                 MP_ROM_PTR(&py_image_b_and_obj)},
@@ -6174,7 +6324,7 @@ static const mp_rom_map_elem_t locals_dict_table[] = {
     {MP_ROM_QSTR(MP_QSTR_dilate),              MP_ROM_PTR(&py_image_dilate_obj)},
     {MP_ROM_QSTR(MP_QSTR_open),                MP_ROM_PTR(&py_image_open_obj)},
     {MP_ROM_QSTR(MP_QSTR_close),               MP_ROM_PTR(&py_image_close_obj)},
-#else
+    #else
     {MP_ROM_QSTR(MP_QSTR_binary),              MP_ROM_PTR(&py_func_unavailable_obj)},
     {MP_ROM_QSTR(MP_QSTR_invert),              MP_ROM_PTR(&py_func_unavailable_obj)},
     {MP_ROM_QSTR(MP_QSTR_and),                 MP_ROM_PTR(&py_func_unavailable_obj)},
@@ -6193,120 +6343,112 @@ static const mp_rom_map_elem_t locals_dict_table[] = {
     {MP_ROM_QSTR(MP_QSTR_dilate),              MP_ROM_PTR(&py_func_unavailable_obj)},
     {MP_ROM_QSTR(MP_QSTR_open),                MP_ROM_PTR(&py_func_unavailable_obj)},
     {MP_ROM_QSTR(MP_QSTR_close),               MP_ROM_PTR(&py_func_unavailable_obj)},
-#endif
-#ifdef IMLIB_ENABLE_MATH_OPS
+    #endif
     /* Math Methods */
-    {MP_ROM_QSTR(MP_QSTR_negate),              MP_ROM_PTR(&py_image_negate_obj)},
-    {MP_ROM_QSTR(MP_QSTR_assign),              MP_ROM_PTR(&py_image_replace_obj)},
-    {MP_ROM_QSTR(MP_QSTR_replace),             MP_ROM_PTR(&py_image_replace_obj)},
-    {MP_ROM_QSTR(MP_QSTR_set),                 MP_ROM_PTR(&py_image_replace_obj)},
+    #ifdef IMLIB_ENABLE_MATH_OPS
+    {MP_ROM_QSTR(MP_QSTR_negate),              MP_ROM_PTR(&py_image_invert_obj)},
+    {MP_ROM_QSTR(MP_QSTR_assign),              MP_ROM_PTR(&py_image_draw_image_obj)},
+    {MP_ROM_QSTR(MP_QSTR_replace),             MP_ROM_PTR(&py_image_draw_image_obj)},
+    {MP_ROM_QSTR(MP_QSTR_set),                 MP_ROM_PTR(&py_image_draw_image_obj)},
     {MP_ROM_QSTR(MP_QSTR_add),                 MP_ROM_PTR(&py_image_add_obj)},
     {MP_ROM_QSTR(MP_QSTR_sub),                 MP_ROM_PTR(&py_image_sub_obj)},
-    {MP_ROM_QSTR(MP_QSTR_mul),                 MP_ROM_PTR(&py_image_mul_obj)},
-    {MP_ROM_QSTR(MP_QSTR_div),                 MP_ROM_PTR(&py_image_div_obj)},
+    {MP_ROM_QSTR(MP_QSTR_rsub),                MP_ROM_PTR(&py_image_rsub_obj)},
     {MP_ROM_QSTR(MP_QSTR_min),                 MP_ROM_PTR(&py_image_min_obj)},
     {MP_ROM_QSTR(MP_QSTR_max),                 MP_ROM_PTR(&py_image_max_obj)},
     {MP_ROM_QSTR(MP_QSTR_difference),          MP_ROM_PTR(&py_image_difference_obj)},
-    {MP_ROM_QSTR(MP_QSTR_blend),               MP_ROM_PTR(&py_image_blend_obj)},
-#else
+    {MP_ROM_QSTR(MP_QSTR_blend),               MP_ROM_PTR(&py_image_draw_image_obj)},
+    #else
     {MP_ROM_QSTR(MP_QSTR_negate),              MP_ROM_PTR(&py_func_unavailable_obj)},
     {MP_ROM_QSTR(MP_QSTR_assign),              MP_ROM_PTR(&py_func_unavailable_obj)},
     {MP_ROM_QSTR(MP_QSTR_replace),             MP_ROM_PTR(&py_func_unavailable_obj)},
     {MP_ROM_QSTR(MP_QSTR_set),                 MP_ROM_PTR(&py_func_unavailable_obj)},
     {MP_ROM_QSTR(MP_QSTR_add),                 MP_ROM_PTR(&py_func_unavailable_obj)},
     {MP_ROM_QSTR(MP_QSTR_sub),                 MP_ROM_PTR(&py_func_unavailable_obj)},
-    {MP_ROM_QSTR(MP_QSTR_mul),                 MP_ROM_PTR(&py_func_unavailable_obj)},
-    {MP_ROM_QSTR(MP_QSTR_div),                 MP_ROM_PTR(&py_func_unavailable_obj)},
     {MP_ROM_QSTR(MP_QSTR_min),                 MP_ROM_PTR(&py_func_unavailable_obj)},
     {MP_ROM_QSTR(MP_QSTR_max),                 MP_ROM_PTR(&py_func_unavailable_obj)},
     {MP_ROM_QSTR(MP_QSTR_difference),          MP_ROM_PTR(&py_func_unavailable_obj)},
     {MP_ROM_QSTR(MP_QSTR_blend),               MP_ROM_PTR(&py_func_unavailable_obj)},
-#endif
-#if defined(IMLIB_ENABLE_MATH_OPS) && defined (IMLIB_ENABLE_BINARY_OPS)
+    #endif
+    #if defined(IMLIB_ENABLE_MATH_OPS) && defined(IMLIB_ENABLE_BINARY_OPS)
     {MP_ROM_QSTR(MP_QSTR_top_hat),             MP_ROM_PTR(&py_image_top_hat_obj)},
     {MP_ROM_QSTR(MP_QSTR_black_hat),           MP_ROM_PTR(&py_image_black_hat_obj)},
-#else
+    #else
     {MP_ROM_QSTR(MP_QSTR_top_hat),             MP_ROM_PTR(&py_func_unavailable_obj)},
     {MP_ROM_QSTR(MP_QSTR_black_hat),           MP_ROM_PTR(&py_func_unavailable_obj)},
-#endif //defined(IMLIB_ENABLE_MATH_OPS) && defined (IMLIB_ENABLE_BINARY_OPS)
+    #endif // defined(IMLIB_ENABLE_MATH_OPS) && defined (IMLIB_ENABLE_BINARY_OPS)
     /* Filtering Methods */
     {MP_ROM_QSTR(MP_QSTR_histeq),              MP_ROM_PTR(&py_image_histeq_obj)},
-#ifdef IMLIB_ENABLE_MEAN
+    #ifdef IMLIB_ENABLE_MEAN
     {MP_ROM_QSTR(MP_QSTR_mean),                MP_ROM_PTR(&py_image_mean_obj)},
-#else
+    #else
     {MP_ROM_QSTR(MP_QSTR_mean),                MP_ROM_PTR(&py_func_unavailable_obj)},
-#endif
-#ifdef IMLIB_ENABLE_MEDIAN
+    #endif
+    #ifdef IMLIB_ENABLE_MEDIAN
     {MP_ROM_QSTR(MP_QSTR_median),              MP_ROM_PTR(&py_image_median_obj)},
-#else
+    #else
     {MP_ROM_QSTR(MP_QSTR_median),              MP_ROM_PTR(&py_func_unavailable_obj)},
-#endif
-#ifdef IMLIB_ENABLE_MODE
+    #endif
+    #ifdef IMLIB_ENABLE_MODE
     {MP_ROM_QSTR(MP_QSTR_mode),                MP_ROM_PTR(&py_image_mode_obj)},
-#else
+    #else
     {MP_ROM_QSTR(MP_QSTR_mode),                MP_ROM_PTR(&py_func_unavailable_obj)},
-#endif
-#ifdef IMLIB_ENABLE_MIDPOINT
+    #endif
+    #ifdef IMLIB_ENABLE_MIDPOINT
     {MP_ROM_QSTR(MP_QSTR_midpoint),            MP_ROM_PTR(&py_image_midpoint_obj)},
-#else
+    #else
     {MP_ROM_QSTR(MP_QSTR_midpoint),            MP_ROM_PTR(&py_func_unavailable_obj)},
-#endif
-#ifdef IMLIB_ENABLE_MORPH
+    #endif
+    #ifdef IMLIB_ENABLE_MORPH
     {MP_ROM_QSTR(MP_QSTR_morph),               MP_ROM_PTR(&py_image_morph_obj)},
-#else
+    #else
     {MP_ROM_QSTR(MP_QSTR_morph),               MP_ROM_PTR(&py_func_unavailable_obj)},
-#endif
-#ifdef IMLIB_ENABLE_GAUSSIAN
+    #endif
+    #ifdef IMLIB_ENABLE_GAUSSIAN
     {MP_ROM_QSTR(MP_QSTR_blur),                MP_ROM_PTR(&py_image_gaussian_obj)},
     {MP_ROM_QSTR(MP_QSTR_gaussian),            MP_ROM_PTR(&py_image_gaussian_obj)},
     {MP_ROM_QSTR(MP_QSTR_gaussian_blur),       MP_ROM_PTR(&py_image_gaussian_obj)},
-#else
+    #else
     {MP_ROM_QSTR(MP_QSTR_blur),                MP_ROM_PTR(&py_func_unavailable_obj)},
     {MP_ROM_QSTR(MP_QSTR_gaussian),            MP_ROM_PTR(&py_func_unavailable_obj)},
     {MP_ROM_QSTR(MP_QSTR_gaussian_blur),       MP_ROM_PTR(&py_func_unavailable_obj)},
-#endif
-#ifdef IMLIB_ENABLE_LAPLACIAN
+    #endif
+    #ifdef IMLIB_ENABLE_LAPLACIAN
     {MP_ROM_QSTR(MP_QSTR_laplacian),           MP_ROM_PTR(&py_image_laplacian_obj)},
-#else
+    #else
     {MP_ROM_QSTR(MP_QSTR_laplacian),           MP_ROM_PTR(&py_func_unavailable_obj)},
-#endif
-#ifdef IMLIB_ENABLE_BILATERAL
+    #endif
+    #ifdef IMLIB_ENABLE_BILATERAL
     {MP_ROM_QSTR(MP_QSTR_bilateral),           MP_ROM_PTR(&py_image_bilateral_obj)},
-#else
+    #else
     {MP_ROM_QSTR(MP_QSTR_bilateral),           MP_ROM_PTR(&py_func_unavailable_obj)},
-#endif
-#ifdef IMLIB_ENABLE_CARTOON
-    {MP_ROM_QSTR(MP_QSTR_cartoon),             MP_ROM_PTR(&py_image_cartoon_obj)},
-#else
-    {MP_ROM_QSTR(MP_QSTR_cartoon),             MP_ROM_PTR(&py_func_unavailable_obj)},
-#endif
+    #endif
     /* Geometric Methods */
-#ifdef IMLIB_ENABLE_LINPOLAR
+    #ifdef IMLIB_ENABLE_LINPOLAR
     {MP_ROM_QSTR(MP_QSTR_linpolar),            MP_ROM_PTR(&py_image_linpolar_obj)},
-#else
+    #else
     {MP_ROM_QSTR(MP_QSTR_linpolar),            MP_ROM_PTR(&py_func_unavailable_obj)},
-#endif
-#ifdef IMLIB_ENABLE_LOGPOLAR
+    #endif
+    #ifdef IMLIB_ENABLE_LOGPOLAR
     {MP_ROM_QSTR(MP_QSTR_logpolar),            MP_ROM_PTR(&py_image_logpolar_obj)},
-#else
+    #else
     {MP_ROM_QSTR(MP_QSTR_logpolar),            MP_ROM_PTR(&py_func_unavailable_obj)},
-#endif
-#ifdef IMLIB_ENABLE_LENS_CORR
+    #endif
+    #ifdef IMLIB_ENABLE_LENS_CORR
     {MP_ROM_QSTR(MP_QSTR_lens_corr),           MP_ROM_PTR(&py_image_lens_corr_obj)},
-#else
+    #else
     {MP_ROM_QSTR(MP_QSTR_lens_corr),           MP_ROM_PTR(&py_func_unavailable_obj)},
-#endif
-#ifdef IMLIB_ENABLE_ROTATION_CORR
+    #endif
+    #ifdef IMLIB_ENABLE_ROTATION_CORR
     {MP_ROM_QSTR(MP_QSTR_rotation_corr),       MP_ROM_PTR(&py_image_rotation_corr_obj)},
-#else
+    #else
     {MP_ROM_QSTR(MP_QSTR_rotation_corr),       MP_ROM_PTR(&py_func_unavailable_obj)},
-#endif
+    #endif
     /* Get Methods */
-#ifdef IMLIB_ENABLE_GET_SIMILARITY
+    #ifdef IMLIB_ENABLE_GET_SIMILARITY
     {MP_ROM_QSTR(MP_QSTR_get_similarity),      MP_ROM_PTR(&py_image_get_similarity_obj)},
-#else
+    #else
     {MP_ROM_QSTR(MP_QSTR_get_similarity),      MP_ROM_PTR(&py_func_unavailable_obj)},
-#endif
+    #endif
     {MP_ROM_QSTR(MP_QSTR_get_hist),            MP_ROM_PTR(&py_image_get_histogram_obj)},
     {MP_ROM_QSTR(MP_QSTR_get_histogram),       MP_ROM_PTR(&py_image_get_histogram_obj)},
     {MP_ROM_QSTR(MP_QSTR_histogram),           MP_ROM_PTR(&py_image_get_histogram_obj)},
@@ -6316,185 +6458,182 @@ static const mp_rom_map_elem_t locals_dict_table[] = {
     {MP_ROM_QSTR(MP_QSTR_get_regression),      MP_ROM_PTR(&py_image_get_regression_obj)},
     /* Find Methods */
     {MP_ROM_QSTR(MP_QSTR_find_blobs),          MP_ROM_PTR(&py_image_find_blobs_obj)},
-#ifdef IMLIB_ENABLE_FIND_LINES
+    #ifdef IMLIB_ENABLE_FIND_LINES
     {MP_ROM_QSTR(MP_QSTR_find_lines),          MP_ROM_PTR(&py_image_find_lines_obj)},
-#else
+    #else
     {MP_ROM_QSTR(MP_QSTR_find_lines),          MP_ROM_PTR(&py_func_unavailable_obj)},
-#endif
-#ifdef IMLIB_ENABLE_FIND_LINE_SEGMENTS
+    #endif
+    #if defined(IMLIB_ENABLE_FIND_LINE_SEGMENTS) && (!defined(OMV_NO_GPL))
     {MP_ROM_QSTR(MP_QSTR_find_line_segments),  MP_ROM_PTR(&py_image_find_line_segments_obj)},
-#else
+    #else
     {MP_ROM_QSTR(MP_QSTR_find_line_segments),  MP_ROM_PTR(&py_func_unavailable_obj)},
-#endif
-#ifdef IMLIB_ENABLE_FIND_CIRCLES
+    #endif
+    #ifdef IMLIB_ENABLE_FIND_CIRCLES
     {MP_ROM_QSTR(MP_QSTR_find_circles),        MP_ROM_PTR(&py_image_find_circles_obj)},
-#else
+    #else
     {MP_ROM_QSTR(MP_QSTR_find_circles),        MP_ROM_PTR(&py_func_unavailable_obj)},
-#endif
-#ifdef IMLIB_ENABLE_FIND_RECTS
+    #endif
+    #ifdef IMLIB_ENABLE_FIND_RECTS
     {MP_ROM_QSTR(MP_QSTR_find_rects),          MP_ROM_PTR(&py_image_find_rects_obj)},
-#else
+    #else
     {MP_ROM_QSTR(MP_QSTR_find_rects),          MP_ROM_PTR(&py_func_unavailable_obj)},
-#endif
-#ifdef IMLIB_ENABLE_QRCODES
+    #endif
+    #ifdef IMLIB_ENABLE_QRCODES
     {MP_ROM_QSTR(MP_QSTR_find_qrcodes),        MP_ROM_PTR(&py_image_find_qrcodes_obj)},
-#else
+    #else
     {MP_ROM_QSTR(MP_QSTR_find_qrcodes),        MP_ROM_PTR(&py_func_unavailable_obj)},
-#endif
-#ifdef IMLIB_ENABLE_APRILTAGS
+    #endif
+    #ifdef IMLIB_ENABLE_APRILTAGS
     {MP_ROM_QSTR(MP_QSTR_find_apriltags),      MP_ROM_PTR(&py_image_find_apriltags_obj)},
-#else
+    #else
     {MP_ROM_QSTR(MP_QSTR_find_apriltags),      MP_ROM_PTR(&py_func_unavailable_obj)},
-#endif
-#ifdef IMLIB_ENABLE_DATAMATRICES
+    #endif
+    #ifdef IMLIB_ENABLE_DATAMATRICES
     {MP_ROM_QSTR(MP_QSTR_find_datamatrices),   MP_ROM_PTR(&py_image_find_datamatrices_obj)},
-#else
+    #else
     {MP_ROM_QSTR(MP_QSTR_find_datamatrices),   MP_ROM_PTR(&py_func_unavailable_obj)},
-#endif
-#ifdef IMLIB_ENABLE_BARCODES
+    #endif
+    #if defined(IMLIB_ENABLE_BARCODES) && (!defined(OMV_NO_GPL))
     {MP_ROM_QSTR(MP_QSTR_find_barcodes),       MP_ROM_PTR(&py_image_find_barcodes_obj)},
-#else
+    #else
     {MP_ROM_QSTR(MP_QSTR_find_barcodes),       MP_ROM_PTR(&py_func_unavailable_obj)},
-#endif
-#ifdef IMLIB_ENABLE_FIND_DISPLACEMENT
+    #endif
+    #ifdef IMLIB_ENABLE_FIND_DISPLACEMENT
     {MP_ROM_QSTR(MP_QSTR_find_displacement),   MP_ROM_PTR(&py_image_find_displacement_obj)},
-#else
+    #else
     {MP_ROM_QSTR(MP_QSTR_find_displacement),   MP_ROM_PTR(&py_func_unavailable_obj)},
-#endif
-#ifdef IMLIB_FIND_TEMPLATE
+    #endif
+    #ifdef IMLIB_FIND_TEMPLATE
     {MP_ROM_QSTR(MP_QSTR_find_template),       MP_ROM_PTR(&py_image_find_template_obj)},
-#else
+    #else
     {MP_ROM_QSTR(MP_QSTR_find_template),       MP_ROM_PTR(&py_func_unavailable_obj)},
-#endif
+    #endif
+    #ifdef IMLIB_ENABLE_FEATURES
     {MP_ROM_QSTR(MP_QSTR_find_features),       MP_ROM_PTR(&py_image_find_features_obj)},
+    #else
+    {MP_ROM_QSTR(MP_QSTR_find_features),       MP_ROM_PTR(&py_func_unavailable_obj)},
+    #endif
     {MP_ROM_QSTR(MP_QSTR_find_eye),            MP_ROM_PTR(&py_image_find_eye_obj)},
-#ifdef IMLIB_ENABLE_FIND_LBP
+    #ifdef IMLIB_ENABLE_FIND_LBP
     {MP_ROM_QSTR(MP_QSTR_find_lbp),            MP_ROM_PTR(&py_image_find_lbp_obj)},
-#else
+    #else
     {MP_ROM_QSTR(MP_QSTR_find_lbp),            MP_ROM_PTR(&py_func_unavailable_obj)},
-#endif
-#ifdef IMLIB_ENABLE_FIND_KEYPOINTS
+    #endif
+    #ifdef IMLIB_ENABLE_FIND_KEYPOINTS
     {MP_ROM_QSTR(MP_QSTR_find_keypoints),      MP_ROM_PTR(&py_image_find_keypoints_obj)},
-#else
+    #else
     {MP_ROM_QSTR(MP_QSTR_find_keypoints),      MP_ROM_PTR(&py_func_unavailable_obj)},
-#endif
-#ifdef IMLIB_ENABLE_BINARY_OPS
+    #endif
+    #ifdef IMLIB_ENABLE_BINARY_OPS
     {MP_ROM_QSTR(MP_QSTR_find_edges),          MP_ROM_PTR(&py_image_find_edges_obj)},
-#else
+    #else
     {MP_ROM_QSTR(MP_QSTR_find_edges),          MP_ROM_PTR(&py_func_unavailable_obj)},
-#endif
-#ifdef IMLIB_ENABLE_HOG
+    #endif
+    #ifdef IMLIB_ENABLE_HOG
     {MP_ROM_QSTR(MP_QSTR_find_hog),            MP_ROM_PTR(&py_image_find_hog_obj)},
-#else
+    #else
     {MP_ROM_QSTR(MP_QSTR_find_hog),            MP_ROM_PTR(&py_func_unavailable_obj)},
-#endif
-#ifdef IMLIB_ENABLE_SELECTIVE_SEARCH
+    #endif
+    #ifdef IMLIB_ENABLE_SELECTIVE_SEARCH
     {MP_ROM_QSTR(MP_QSTR_selective_search),    MP_ROM_PTR(&py_image_selective_search_obj)},
-#else
+    #else
     {MP_ROM_QSTR(MP_QSTR_selective_search),    MP_ROM_PTR(&py_func_unavailable_obj)},
-#endif
-#ifdef IMLIB_ENABLE_STEREO_DISPARITY
+    #endif
+    #ifdef IMLIB_ENABLE_STEREO_DISPARITY
     {MP_ROM_QSTR(MP_QSTR_stereo_disparity),    MP_ROM_PTR(&py_image_stereo_disparity_obj)},
-#else
+    #else
     {MP_ROM_QSTR(MP_QSTR_stereo_disparity),    MP_ROM_PTR(&py_func_unavailable_obj)},
-#endif
+    #endif
 };
 
-STATIC MP_DEFINE_CONST_DICT(locals_dict, locals_dict_table);
+static MP_DEFINE_CONST_DICT(py_image_locals_dict, locals_dict_table);
 
-static const mp_obj_type_t py_image_type = {
-    { &mp_type_type },
-    .name  = MP_QSTR_Image,
-    .print = py_image_print,
-    .buffer_p = { .get_buffer = py_image_get_buffer },
-    .subscr = py_image_subscr,
-    .getiter = py_image_getiter,
-    .unary_op = py_image_unary_op,
-    .locals_dict = (mp_obj_t) &locals_dict
-};
+MP_DEFINE_CONST_OBJ_TYPE(
+    py_image_type,
+    MP_QSTR_Image,
+    MP_TYPE_FLAG_ITER_IS_GETITER,
+    print, py_image_print,
+    make_new, py_image_make_new,
+    buffer, py_image_get_buffer,
+    subscr, py_image_subscr,
+    iter, py_image_getiter,
+    unary_op, py_image_unary_op,
+    locals_dict, &py_image_locals_dict
+    );
 
-mp_obj_t py_image_binary_to_grayscale(mp_obj_t arg)
-{
+mp_obj_t py_image_binary_to_grayscale(mp_obj_t arg) {
     int8_t b = mp_obj_get_int(arg) & 1;
     return mp_obj_new_int(COLOR_BINARY_TO_GRAYSCALE(b));
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_image_binary_to_grayscale_obj, py_image_binary_to_grayscale);
+static MP_DEFINE_CONST_FUN_OBJ_1(py_image_binary_to_grayscale_obj, py_image_binary_to_grayscale);
 
-mp_obj_t py_image_binary_to_rgb(mp_obj_t arg)
-{
+mp_obj_t py_image_binary_to_rgb(mp_obj_t arg) {
     int8_t b = mp_obj_get_int(arg) & 1;
     uint16_t rgb565 = COLOR_BINARY_TO_RGB565(b);
     return mp_obj_new_tuple(3, (mp_obj_t[3])
-            {mp_obj_new_int(COLOR_RGB565_TO_R8(rgb565)),
-             mp_obj_new_int(COLOR_RGB565_TO_G8(rgb565)),
-             mp_obj_new_int(COLOR_RGB565_TO_B8(rgb565))});
+                            {mp_obj_new_int(COLOR_RGB565_TO_R8(rgb565)),
+                             mp_obj_new_int(COLOR_RGB565_TO_G8(rgb565)),
+                             mp_obj_new_int(COLOR_RGB565_TO_B8(rgb565))});
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_image_binary_to_rgb_obj, py_image_binary_to_rgb);
+static MP_DEFINE_CONST_FUN_OBJ_1(py_image_binary_to_rgb_obj, py_image_binary_to_rgb);
 
-mp_obj_t py_image_binary_to_lab(mp_obj_t arg)
-{
+mp_obj_t py_image_binary_to_lab(mp_obj_t arg) {
     int8_t b = mp_obj_get_int(arg) & 1;
     uint16_t rgb565 = COLOR_BINARY_TO_RGB565(b);
     return mp_obj_new_tuple(3, (mp_obj_t[3])
-            {mp_obj_new_int(COLOR_RGB565_TO_L(rgb565)),
-             mp_obj_new_int(COLOR_RGB565_TO_A(rgb565)),
-             mp_obj_new_int(COLOR_RGB565_TO_B(rgb565))});
+                            {mp_obj_new_int(COLOR_RGB565_TO_L(rgb565)),
+                             mp_obj_new_int(COLOR_RGB565_TO_A(rgb565)),
+                             mp_obj_new_int(COLOR_RGB565_TO_B(rgb565))});
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_image_binary_to_lab_obj, py_image_binary_to_lab);
+static MP_DEFINE_CONST_FUN_OBJ_1(py_image_binary_to_lab_obj, py_image_binary_to_lab);
 
-mp_obj_t py_image_binary_to_yuv(mp_obj_t arg)
-{
+mp_obj_t py_image_binary_to_yuv(mp_obj_t arg) {
     int8_t b = mp_obj_get_int(arg) & 1;
     uint16_t rgb565 = COLOR_BINARY_TO_RGB565(b);
     return mp_obj_new_tuple(3, (mp_obj_t[3])
-            {mp_obj_new_int(COLOR_RGB565_TO_Y(rgb565)),
-             mp_obj_new_int(COLOR_RGB565_TO_U(rgb565)),
-             mp_obj_new_int(COLOR_RGB565_TO_V(rgb565))});
+                            {mp_obj_new_int(COLOR_RGB565_TO_Y(rgb565)),
+                             mp_obj_new_int(COLOR_RGB565_TO_U(rgb565)),
+                             mp_obj_new_int(COLOR_RGB565_TO_V(rgb565))});
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_image_binary_to_yuv_obj, py_image_binary_to_yuv);
+static MP_DEFINE_CONST_FUN_OBJ_1(py_image_binary_to_yuv_obj, py_image_binary_to_yuv);
 
-mp_obj_t py_image_grayscale_to_binary(mp_obj_t arg)
-{
+mp_obj_t py_image_grayscale_to_binary(mp_obj_t arg) {
     int8_t g = mp_obj_get_int(arg) & 255;
     return mp_obj_new_int(COLOR_GRAYSCALE_TO_BINARY(g));
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_image_grayscale_to_binary_obj, py_image_grayscale_to_binary);
+static MP_DEFINE_CONST_FUN_OBJ_1(py_image_grayscale_to_binary_obj, py_image_grayscale_to_binary);
 
-mp_obj_t py_image_grayscale_to_rgb(mp_obj_t arg)
-{
+mp_obj_t py_image_grayscale_to_rgb(mp_obj_t arg) {
     int8_t g = mp_obj_get_int(arg) & 255;
     uint16_t rgb565 = COLOR_GRAYSCALE_TO_RGB565(g);
     return mp_obj_new_tuple(3, (mp_obj_t[3])
-            {mp_obj_new_int(COLOR_RGB565_TO_R8(rgb565)),
-             mp_obj_new_int(COLOR_RGB565_TO_G8(rgb565)),
-             mp_obj_new_int(COLOR_RGB565_TO_B8(rgb565))});
+                            {mp_obj_new_int(COLOR_RGB565_TO_R8(rgb565)),
+                             mp_obj_new_int(COLOR_RGB565_TO_G8(rgb565)),
+                             mp_obj_new_int(COLOR_RGB565_TO_B8(rgb565))});
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_image_grayscale_to_rgb_obj, py_image_grayscale_to_rgb);
+static MP_DEFINE_CONST_FUN_OBJ_1(py_image_grayscale_to_rgb_obj, py_image_grayscale_to_rgb);
 
-mp_obj_t py_image_grayscale_to_lab(mp_obj_t arg)
-{
+mp_obj_t py_image_grayscale_to_lab(mp_obj_t arg) {
     int8_t g = mp_obj_get_int(arg) & 255;
     uint16_t rgb565 = COLOR_GRAYSCALE_TO_RGB565(g);
     return mp_obj_new_tuple(3, (mp_obj_t[3])
-            {mp_obj_new_int(COLOR_RGB565_TO_L(rgb565)),
-             mp_obj_new_int(COLOR_RGB565_TO_A(rgb565)),
-             mp_obj_new_int(COLOR_RGB565_TO_B(rgb565))});
+                            {mp_obj_new_int(COLOR_RGB565_TO_L(rgb565)),
+                             mp_obj_new_int(COLOR_RGB565_TO_A(rgb565)),
+                             mp_obj_new_int(COLOR_RGB565_TO_B(rgb565))});
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_image_grayscale_to_lab_obj, py_image_grayscale_to_lab);
+static MP_DEFINE_CONST_FUN_OBJ_1(py_image_grayscale_to_lab_obj, py_image_grayscale_to_lab);
 
-mp_obj_t py_image_grayscale_to_yuv(mp_obj_t arg)
-{
+mp_obj_t py_image_grayscale_to_yuv(mp_obj_t arg) {
     int8_t g = mp_obj_get_int(arg) & 255;
     uint16_t rgb565 = COLOR_GRAYSCALE_TO_RGB565(g);
     return mp_obj_new_tuple(3, (mp_obj_t[3])
-            {mp_obj_new_int(COLOR_RGB565_TO_Y(rgb565)),
-             mp_obj_new_int(COLOR_RGB565_TO_U(rgb565)),
-             mp_obj_new_int(COLOR_RGB565_TO_V(rgb565))});
+                            {mp_obj_new_int(COLOR_RGB565_TO_Y(rgb565)),
+                             mp_obj_new_int(COLOR_RGB565_TO_U(rgb565)),
+                             mp_obj_new_int(COLOR_RGB565_TO_V(rgb565))});
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(py_image_grayscale_to_yuv_obj, py_image_grayscale_to_yuv);
+static MP_DEFINE_CONST_FUN_OBJ_1(py_image_grayscale_to_yuv_obj, py_image_grayscale_to_yuv);
 
-mp_obj_t py_image_rgb_to_binary(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
+mp_obj_t py_image_rgb_to_binary(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
     const mp_obj_t *arg_vec;
     py_helper_consume_array(n_args, args, 0, 3, &arg_vec);
     uint8_t r = mp_obj_get_int(arg_vec[0]) & 255;
@@ -6503,10 +6642,9 @@ mp_obj_t py_image_rgb_to_binary(uint n_args, const mp_obj_t *args, mp_map_t *kw_
     uint16_t rgb565 = COLOR_R8_G8_B8_TO_RGB565(r, g, b);
     return mp_obj_new_int(COLOR_RGB565_TO_BINARY(rgb565));
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_rgb_to_binary_obj, 1, py_image_rgb_to_binary);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_rgb_to_binary_obj, 1, py_image_rgb_to_binary);
 
-mp_obj_t py_image_rgb_to_grayscale(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
+mp_obj_t py_image_rgb_to_grayscale(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
     const mp_obj_t *arg_vec;
     py_helper_consume_array(n_args, args, 0, 3, &arg_vec);
     uint8_t r = mp_obj_get_int(arg_vec[0]) & 255;
@@ -6515,10 +6653,9 @@ mp_obj_t py_image_rgb_to_grayscale(uint n_args, const mp_obj_t *args, mp_map_t *
     uint16_t rgb565 = COLOR_R8_G8_B8_TO_RGB565(r, g, b);
     return mp_obj_new_int(COLOR_RGB565_TO_GRAYSCALE(rgb565));
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_rgb_to_grayscale_obj, 1, py_image_rgb_to_grayscale);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_rgb_to_grayscale_obj, 1, py_image_rgb_to_grayscale);
 
-mp_obj_t py_image_rgb_to_lab(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
+mp_obj_t py_image_rgb_to_lab(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
     const mp_obj_t *arg_vec;
     py_helper_consume_array(n_args, args, 0, 3, &arg_vec);
     uint8_t r = mp_obj_get_int(arg_vec[0]) & 255;
@@ -6526,14 +6663,13 @@ mp_obj_t py_image_rgb_to_lab(uint n_args, const mp_obj_t *args, mp_map_t *kw_arg
     uint8_t b = mp_obj_get_int(arg_vec[2]) & 255;
     uint16_t rgb565 = COLOR_R8_G8_B8_TO_RGB565(r, g, b);
     return mp_obj_new_tuple(3, (mp_obj_t[3])
-            {mp_obj_new_int(COLOR_RGB565_TO_L(rgb565)),
-             mp_obj_new_int(COLOR_RGB565_TO_A(rgb565)),
-             mp_obj_new_int(COLOR_RGB565_TO_B(rgb565))});
+                            {mp_obj_new_int(COLOR_RGB565_TO_L(rgb565)),
+                             mp_obj_new_int(COLOR_RGB565_TO_A(rgb565)),
+                             mp_obj_new_int(COLOR_RGB565_TO_B(rgb565))});
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_rgb_to_lab_obj, 1, py_image_rgb_to_lab);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_rgb_to_lab_obj, 1, py_image_rgb_to_lab);
 
-mp_obj_t py_image_rgb_to_yuv(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
+mp_obj_t py_image_rgb_to_yuv(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
     const mp_obj_t *arg_vec;
     py_helper_consume_array(n_args, args, 0, 3, &arg_vec);
     uint8_t r = mp_obj_get_int(arg_vec[0]) & 255;
@@ -6541,14 +6677,13 @@ mp_obj_t py_image_rgb_to_yuv(uint n_args, const mp_obj_t *args, mp_map_t *kw_arg
     uint8_t b = mp_obj_get_int(arg_vec[2]) & 255;
     uint16_t rgb565 = COLOR_R8_G8_B8_TO_RGB565(r, g, b);
     return mp_obj_new_tuple(3, (mp_obj_t[3])
-            {mp_obj_new_int(COLOR_RGB565_TO_Y(rgb565)),
-             mp_obj_new_int(COLOR_RGB565_TO_U(rgb565)),
-             mp_obj_new_int(COLOR_RGB565_TO_V(rgb565))});
+                            {mp_obj_new_int(COLOR_RGB565_TO_Y(rgb565)),
+                             mp_obj_new_int(COLOR_RGB565_TO_U(rgb565)),
+                             mp_obj_new_int(COLOR_RGB565_TO_V(rgb565))});
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_rgb_to_yuv_obj, 1, py_image_rgb_to_yuv);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_rgb_to_yuv_obj, 1, py_image_rgb_to_yuv);
 
-mp_obj_t py_image_lab_to_binary(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
+mp_obj_t py_image_lab_to_binary(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
     const mp_obj_t *arg_vec;
     py_helper_consume_array(n_args, args, 0, 3, &arg_vec);
     int8_t l = (mp_obj_get_int(arg_vec[0]) & 255) % 100;
@@ -6557,10 +6692,9 @@ mp_obj_t py_image_lab_to_binary(uint n_args, const mp_obj_t *args, mp_map_t *kw_
     uint16_t rgb565 = COLOR_LAB_TO_RGB565(l, a, b);
     return mp_obj_new_int(COLOR_RGB565_TO_BINARY(rgb565));
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_lab_to_binary_obj, 1, py_image_lab_to_binary);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_lab_to_binary_obj, 1, py_image_lab_to_binary);
 
-mp_obj_t py_image_lab_to_grayscale(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
+mp_obj_t py_image_lab_to_grayscale(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
     const mp_obj_t *arg_vec;
     py_helper_consume_array(n_args, args, 0, 3, &arg_vec);
     int8_t l = (mp_obj_get_int(arg_vec[0]) & 255) % 100;
@@ -6569,10 +6703,9 @@ mp_obj_t py_image_lab_to_grayscale(uint n_args, const mp_obj_t *args, mp_map_t *
     uint16_t rgb565 = COLOR_LAB_TO_RGB565(l, a, b);
     return mp_obj_new_int(COLOR_RGB565_TO_GRAYSCALE(rgb565));
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_lab_to_grayscale_obj, 1, py_image_lab_to_grayscale);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_lab_to_grayscale_obj, 1, py_image_lab_to_grayscale);
 
-mp_obj_t py_image_lab_to_rgb(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
+mp_obj_t py_image_lab_to_rgb(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
     const mp_obj_t *arg_vec;
     py_helper_consume_array(n_args, args, 0, 3, &arg_vec);
     int8_t l = (mp_obj_get_int(arg_vec[0]) & 255) % 100;
@@ -6580,14 +6713,13 @@ mp_obj_t py_image_lab_to_rgb(uint n_args, const mp_obj_t *args, mp_map_t *kw_arg
     int8_t b = mp_obj_get_int(arg_vec[2]) & 255;
     uint16_t rgb565 = COLOR_LAB_TO_RGB565(l, a, b);
     return mp_obj_new_tuple(3, (mp_obj_t[3])
-            {mp_obj_new_int(COLOR_RGB565_TO_R8(rgb565)),
-             mp_obj_new_int(COLOR_RGB565_TO_G8(rgb565)),
-             mp_obj_new_int(COLOR_RGB565_TO_B8(rgb565))});
+                            {mp_obj_new_int(COLOR_RGB565_TO_R8(rgb565)),
+                             mp_obj_new_int(COLOR_RGB565_TO_G8(rgb565)),
+                             mp_obj_new_int(COLOR_RGB565_TO_B8(rgb565))});
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_lab_to_rgb_obj, 1, py_image_lab_to_rgb);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_lab_to_rgb_obj, 1, py_image_lab_to_rgb);
 
-mp_obj_t py_image_lab_to_yuv(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
+mp_obj_t py_image_lab_to_yuv(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
     const mp_obj_t *arg_vec;
     py_helper_consume_array(n_args, args, 0, 3, &arg_vec);
     int8_t l = (mp_obj_get_int(arg_vec[0]) & 255) % 100;
@@ -6595,14 +6727,13 @@ mp_obj_t py_image_lab_to_yuv(uint n_args, const mp_obj_t *args, mp_map_t *kw_arg
     int8_t b = mp_obj_get_int(arg_vec[2]) & 255;
     uint16_t rgb565 = COLOR_LAB_TO_RGB565(l, a, b);
     return mp_obj_new_tuple(3, (mp_obj_t[3])
-            {mp_obj_new_int(COLOR_RGB565_TO_Y(rgb565)),
-             mp_obj_new_int(COLOR_RGB565_TO_U(rgb565)),
-             mp_obj_new_int(COLOR_RGB565_TO_V(rgb565))});
+                            {mp_obj_new_int(COLOR_RGB565_TO_Y(rgb565)),
+                             mp_obj_new_int(COLOR_RGB565_TO_U(rgb565)),
+                             mp_obj_new_int(COLOR_RGB565_TO_V(rgb565))});
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_lab_to_yuv_obj, 1, py_image_lab_to_yuv);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_lab_to_yuv_obj, 1, py_image_lab_to_yuv);
 
-mp_obj_t py_image_yuv_to_binary(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
+mp_obj_t py_image_yuv_to_binary(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
     const mp_obj_t *arg_vec;
     py_helper_consume_array(n_args, args, 0, 3, &arg_vec);
     int8_t y = mp_obj_get_int(arg_vec[0]) & 255;
@@ -6611,10 +6742,9 @@ mp_obj_t py_image_yuv_to_binary(uint n_args, const mp_obj_t *args, mp_map_t *kw_
     uint16_t rgb565 = COLOR_YUV_TO_RGB565(y, u, v);
     return mp_obj_new_int(COLOR_RGB565_TO_BINARY(rgb565));
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_yuv_to_binary_obj, 1, py_image_yuv_to_binary);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_yuv_to_binary_obj, 1, py_image_yuv_to_binary);
 
-mp_obj_t py_image_yuv_to_grayscale(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
+mp_obj_t py_image_yuv_to_grayscale(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
     const mp_obj_t *arg_vec;
     py_helper_consume_array(n_args, args, 0, 3, &arg_vec);
     int8_t y = mp_obj_get_int(arg_vec[0]) & 255;
@@ -6623,10 +6753,9 @@ mp_obj_t py_image_yuv_to_grayscale(uint n_args, const mp_obj_t *args, mp_map_t *
     uint16_t rgb565 = COLOR_YUV_TO_RGB565(y, u, v);
     return mp_obj_new_int(COLOR_RGB565_TO_GRAYSCALE(rgb565));
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_yuv_to_grayscale_obj, 1, py_image_yuv_to_grayscale);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_yuv_to_grayscale_obj, 1, py_image_yuv_to_grayscale);
 
-mp_obj_t py_image_yuv_to_rgb(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
+mp_obj_t py_image_yuv_to_rgb(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
     const mp_obj_t *arg_vec;
     py_helper_consume_array(n_args, args, 0, 3, &arg_vec);
     int8_t y = mp_obj_get_int(arg_vec[0]) & 255;
@@ -6634,14 +6763,13 @@ mp_obj_t py_image_yuv_to_rgb(uint n_args, const mp_obj_t *args, mp_map_t *kw_arg
     int8_t v = mp_obj_get_int(arg_vec[2]) & 255;
     uint16_t rgb565 = COLOR_YUV_TO_RGB565(y, u, v);
     return mp_obj_new_tuple(3, (mp_obj_t[3])
-            {mp_obj_new_int(COLOR_RGB565_TO_R8(rgb565)),
-             mp_obj_new_int(COLOR_RGB565_TO_G8(rgb565)),
-             mp_obj_new_int(COLOR_RGB565_TO_B8(rgb565))});
+                            {mp_obj_new_int(COLOR_RGB565_TO_R8(rgb565)),
+                             mp_obj_new_int(COLOR_RGB565_TO_G8(rgb565)),
+                             mp_obj_new_int(COLOR_RGB565_TO_B8(rgb565))});
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_yuv_to_rgb_obj, 1, py_image_yuv_to_rgb);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_yuv_to_rgb_obj, 1, py_image_yuv_to_rgb);
 
-mp_obj_t py_image_yuv_to_lab(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
+mp_obj_t py_image_yuv_to_lab(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
     const mp_obj_t *arg_vec;
     py_helper_consume_array(n_args, args, 0, 3, &arg_vec);
     int8_t y = mp_obj_get_int(arg_vec[0]) & 255;
@@ -6649,128 +6777,32 @@ mp_obj_t py_image_yuv_to_lab(uint n_args, const mp_obj_t *args, mp_map_t *kw_arg
     int8_t v = mp_obj_get_int(arg_vec[2]) & 255;
     uint16_t rgb565 = COLOR_YUV_TO_RGB565(y, u, v);
     return mp_obj_new_tuple(3, (mp_obj_t[3])
-            {mp_obj_new_int(COLOR_RGB565_TO_L(rgb565)),
-             mp_obj_new_int(COLOR_RGB565_TO_A(rgb565)),
-             mp_obj_new_int(COLOR_RGB565_TO_B(rgb565))});
+                            {mp_obj_new_int(COLOR_RGB565_TO_L(rgb565)),
+                             mp_obj_new_int(COLOR_RGB565_TO_A(rgb565)),
+                             mp_obj_new_int(COLOR_RGB565_TO_B(rgb565))});
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_yuv_to_lab_obj, 1, py_image_yuv_to_lab);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_yuv_to_lab_obj, 1, py_image_yuv_to_lab);
 
-mp_obj_t py_image(int w, int h, pixformat_t pixfmt, uint32_t size, void *pixels)
-{
+mp_obj_t py_image(int w, int h, pixformat_t pixfmt, uint32_t size, void *pixels) {
     py_image_obj_t *o = m_new_obj(py_image_obj_t);
     o->base.type = &py_image_type;
     o->_cobj.w = w;
     o->_cobj.h = h;
-    o->_cobj.size   = size;
+    o->_cobj.size = size;
     o->_cobj.pixfmt = pixfmt;
     o->_cobj.pixels = pixels;
     return o;
 }
 
-mp_obj_t py_image_from_struct(image_t *img)
-{
+mp_obj_t py_image_from_struct(image_t *img) {
     py_image_obj_t *o = m_new_obj(py_image_obj_t);
     o->base.type = &py_image_type;
     o->_cobj = *img;
     return o;
 }
 
-mp_obj_t py_image_load_image(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
-    // mode == false -> load behavior
-    // mode == true -> make behavior
-    bool mode = mp_obj_is_integer(args[0]);
-    const char *path = mode ? NULL : mp_obj_str_get_str(args[0]);
-
-    mp_obj_t copy_to_fb_obj = py_helper_keyword_object(n_args, args,
-            mode ? 3 : 1, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_copy_to_fb), NULL);
-    bool copy_to_fb = false;
-    image_t *arg_other = NULL;
-
-    if (copy_to_fb_obj) {
-        if (mp_obj_is_integer(copy_to_fb_obj)) {
-            copy_to_fb = mp_obj_get_int(copy_to_fb_obj);
-        } else {
-            arg_other = py_helper_arg_to_image_mutable(copy_to_fb_obj);
-        }
-    }
-
-    image_t image = {0};
-
-    if (mode) {
-        PY_ASSERT_TRUE_MSG(n_args >= 3, "Expected width, height, and type");
-
-        image.w = mp_obj_get_int(args[0]);
-        PY_ASSERT_TRUE_MSG(image.w > 0, "Width must be > 0");
-
-        image.h = mp_obj_get_int(args[1]);
-        PY_ASSERT_TRUE_MSG(image.h > 0, "Height must be > 0");
-
-        switch(mp_obj_get_int(args[2])) {
-            case PIXFORMAT_BINARY:
-                image.pixfmt = PIXFORMAT_BINARY;
-                break;
-            case PIXFORMAT_GRAYSCALE:
-                image.pixfmt = PIXFORMAT_GRAYSCALE;
-                break;
-            case PIXFORMAT_RGB565:
-                image.pixfmt = PIXFORMAT_RGB565;
-                break;
-            default:
-                PY_ASSERT_TRUE_MSG(false, "Unsupported type");
-                break;
-        }
-    } else {
-        #if defined(IMLIB_ENABLE_IMAGE_FILE_IO)
-        fb_alloc_mark();
-        FIL fp;
-        img_read_settings_t rs;
-        imlib_read_geometry(&fp, &image, path, &rs);
-        file_buffer_off(&fp);
-        file_close(&fp);
-        #else
-        (void) path;
-        mp_raise_msg(&mp_type_OSError, MP_ERROR_TEXT("Image I/O is not supported"));
-        #endif //IMLIB_ENABLE_IMAGE_FILE_IO
-    }
-
-    size_t size = image_size(&image);
-
-    if (copy_to_fb) {
-        py_helper_set_to_framebuffer(&image);
-    } else if (arg_other) {
-        PY_ASSERT_TRUE_MSG((size <= image_size(arg_other)),
-            "The new image won't fit in the target frame buffer!");
-        image.data = arg_other->data;
-    } else if (mode) {
-        image.data = xalloc(size);
-    }
-
-    if (mode) {
-        memset(image.data, 0, size);
-    } else {
-        #if defined(IMLIB_ENABLE_IMAGE_FILE_IO)
-        imlib_load_image(&image, path);
-        fb_alloc_free_till_mark();
-        #endif
-    }
-
-    py_helper_update_framebuffer(&image);
-
-    if (arg_other) {
-        memcpy(arg_other, &image, sizeof(image_t));
-    }
-
-    if (copy_to_fb) {
-        framebuffer_update_jpeg_buffer();
-    }
-
-    return py_image_from_struct(&image);
-}
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_load_image_obj, 1, py_image_load_image);
-
-mp_obj_t py_image_load_cascade(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
+#ifdef IMLIB_ENABLE_FEATURES
+mp_obj_t py_image_load_cascade(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
     cascade_t cascade;
     const char *path = mp_obj_str_get_str(args[0]);
 
@@ -6779,7 +6811,7 @@ mp_obj_t py_image_load_cascade(uint n_args, const mp_obj_t *args, mp_map_t *kw_a
     if (res != FR_OK) {
         #if defined(IMLIB_ENABLE_IMAGE_FILE_IO)
         // cascade is not built-in and failed to load it from file.
-        mp_raise_msg(&mp_type_OSError, (mp_rom_error_text_t) ffs_strerror(res));
+        mp_raise_msg(&mp_type_OSError, (mp_rom_error_text_t) file_strerror(res));
         #else
         // cascade is not built-in.
         mp_raise_msg(&mp_type_OSError, MP_ERROR_TEXT("Image I/O is not supported"));
@@ -6799,68 +6831,63 @@ mp_obj_t py_image_load_cascade(uint n_args, const mp_obj_t *args, mp_map_t *kw_a
     o->_cobj = cascade;
     return o;
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_load_cascade_obj, 1, py_image_load_cascade);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_load_cascade_obj, 1, py_image_load_cascade);
+#endif // IMLIB_ENABLE_FEATURES
 
 #if defined(IMLIB_ENABLE_DESCRIPTOR)
 #if defined(IMLIB_ENABLE_IMAGE_FILE_IO)
-mp_obj_t py_image_load_descriptor(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
+mp_obj_t py_image_load_descriptor(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
     FIL fp;
-    UINT bytes;
-    FRESULT res;
+    FRESULT res = FR_OK;
 
     uint32_t desc_type;
     mp_obj_t desc = mp_const_none;
     const char *path = mp_obj_str_get_str(args[0]);
 
-    if ((res = f_open_helper(&fp, path, FA_READ|FA_OPEN_EXISTING)) == FR_OK) {
-        // Read descriptor type
-        res = f_read(&fp, &desc_type, sizeof(desc_type), &bytes);
-        if (res != FR_OK || bytes  != sizeof(desc_type)) {
-            goto error;
-        }
+    file_open(&fp, path, false, FA_READ | FA_OPEN_EXISTING);
 
-        // Load descriptor
-        switch (desc_type) {
-            #if defined(IMLIB_ENABLE_FIND_LBP)
-            case DESC_LBP: {
-                py_lbp_obj_t *lbp = m_new_obj(py_lbp_obj_t);
-                lbp->base.type = &py_lbp_type;
+    // Read descriptor type
+    file_read(&fp, &desc_type, sizeof(desc_type));
 
-                res = imlib_lbp_desc_load(&fp, &lbp->hist);
-                if (res == FR_OK) {
-                    desc = lbp;
-                }
-                break;
+    // Load descriptor
+    switch (desc_type) {
+        #if defined(IMLIB_ENABLE_FIND_LBP)
+        case DESC_LBP: {
+            py_lbp_obj_t *lbp = m_new_obj(py_lbp_obj_t);
+            lbp->base.type = &py_lbp_type;
+
+            res = imlib_lbp_desc_load(&fp, &lbp->hist);
+            if (res == FR_OK) {
+                desc = lbp;
             }
-            #endif  //IMLIB_ENABLE_FIND_LBP
-            #if defined(IMLIB_ENABLE_FIND_KEYPOINTS)
-            case DESC_ORB: {
-                array_t *kpts = NULL;
-                array_alloc(&kpts, xfree);
-
-                res = orb_load_descriptor(&fp, kpts);
-                if (res == FR_OK) {
-                    // Return keypoints MP object
-                    py_kp_obj_t *kp_obj = m_new_obj(py_kp_obj_t);
-                    kp_obj->base.type = &py_kp_type;
-                    kp_obj->kpts = kpts;
-                    kp_obj->threshold = 10;
-                    kp_obj->normalized = false;
-                    desc = kp_obj;
-                }
-                break;
-            }
-            #endif //IMLIB_ENABLE_FIND_KEYPOINTS
+            break;
         }
+        #endif  //IMLIB_ENABLE_FIND_LBP
+        #if defined(IMLIB_ENABLE_FIND_KEYPOINTS)
+        case DESC_ORB: {
+            array_t *kpts = NULL;
+            array_alloc(&kpts, xfree);
 
-        f_close(&fp);
+            res = orb_load_descriptor(&fp, kpts);
+            if (res == FR_OK) {
+                // Return keypoints MP object
+                py_kp_obj_t *kp_obj = m_new_obj(py_kp_obj_t);
+                kp_obj->base.type = &py_kp_type;
+                kp_obj->kpts = kpts;
+                kp_obj->threshold = 10;
+                kp_obj->normalized = false;
+                desc = kp_obj;
+            }
+            break;
+        }
+        #endif //IMLIB_ENABLE_FIND_KEYPOINTS
     }
 
-error:
-    // File open or write error
+    file_close(&fp);
+
+    // File read error
     if (res != FR_OK) {
-        mp_raise_msg(&mp_type_OSError, (mp_rom_error_text_t) ffs_strerror(res));
+        mp_raise_msg(&mp_type_OSError, (mp_rom_error_text_t) file_strerror(res));
     }
 
     // If no file error and descriptor is still none, then it's not supported.
@@ -6869,73 +6896,67 @@ error:
     }
     return desc;
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_load_descriptor_obj, 1, py_image_load_descriptor);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_load_descriptor_obj, 1, py_image_load_descriptor);
 
-mp_obj_t py_image_save_descriptor(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
+mp_obj_t py_image_save_descriptor(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
     FIL fp;
-    UINT bytes;
-    FRESULT res;
+    FRESULT res = FR_OK;
 
     uint32_t desc_type;
     const char *path = mp_obj_str_get_str(args[1]);
 
-    if ((res = f_open_helper(&fp, path, FA_WRITE|FA_CREATE_ALWAYS)) == FR_OK) {
-        // Find descriptor type
-        const mp_obj_type_t *desc_obj_type = mp_obj_get_type(args[0]);
-        if (0) {
-        #if defined(IMLIB_ENABLE_FIND_LBP)
-        } else if (desc_obj_type ==  &py_lbp_type) {
-            desc_type = DESC_LBP;
-        #endif //IMLIB_ENABLE_FIND_LBP
-        #if defined(IMLIB_ENABLE_FIND_KEYPOINTS)
-        } else if (desc_obj_type ==  &py_kp_type) {
-            desc_type = DESC_ORB;
-        #endif //IMLIB_ENABLE_FIND_KEYPOINTS
-        } else {
-            (void) desc_obj_type;
-            mp_raise_msg(&mp_type_OSError, MP_ERROR_TEXT("Descriptor type is not supported"));
-        }
+    file_open(&fp, path, false, FA_WRITE | FA_CREATE_ALWAYS);
 
-        // Write descriptor type
-        res = f_write(&fp, &desc_type, sizeof(desc_type), &bytes);
-        if (res != FR_OK || bytes  !=  sizeof(desc_type)) {
-            goto error;
-        }
-
-        // Write descriptor
-        switch (desc_type) {
-            #if defined(IMLIB_ENABLE_FIND_LBP)
-            case DESC_LBP: {
-                py_lbp_obj_t *lbp = ((py_lbp_obj_t*)args[0]);
-                res = imlib_lbp_desc_save(&fp, lbp->hist);
-                break;
-            }
-            #endif //IMLIB_ENABLE_FIND_LBP
-            #if defined(IMLIB_ENABLE_FIND_KEYPOINTS)
-            case DESC_ORB: {
-                py_kp_obj_t *kpts = ((py_kp_obj_t*)args[0]);
-                res = orb_save_descriptor(&fp, kpts->kpts);
-                break;
-            }
-            #endif //IMLIB_ENABLE_FIND_KEYPOINTS
-        }
-        // ignore unsupported descriptors when saving
-        f_close(&fp);
+    // Find descriptor type
+    const mp_obj_type_t *desc_obj_type = mp_obj_get_type(args[0]);
+    if (0) {
+    #if defined(IMLIB_ENABLE_FIND_LBP)
+    } else if (desc_obj_type == &py_lbp_type) {
+        desc_type = DESC_LBP;
+    #endif //IMLIB_ENABLE_FIND_LBP
+    #if defined(IMLIB_ENABLE_FIND_KEYPOINTS)
+    } else if (desc_obj_type == &py_kp_type) {
+        desc_type = DESC_ORB;
+    #endif //IMLIB_ENABLE_FIND_KEYPOINTS
+    } else {
+        (void) desc_obj_type;
+        mp_raise_msg(&mp_type_OSError, MP_ERROR_TEXT("Descriptor type is not supported"));
     }
 
-error:
-    // File open or read error
+    // Write descriptor type
+    file_write(&fp, &desc_type, sizeof(desc_type));
+
+    // Write descriptor
+    switch (desc_type) {
+        #if defined(IMLIB_ENABLE_FIND_LBP)
+        case DESC_LBP: {
+            py_lbp_obj_t *lbp = ((py_lbp_obj_t *) args[0]);
+            res = imlib_lbp_desc_save(&fp, lbp->hist);
+            break;
+        }
+        #endif //IMLIB_ENABLE_FIND_LBP
+        #if defined(IMLIB_ENABLE_FIND_KEYPOINTS)
+        case DESC_ORB: {
+            py_kp_obj_t *kpts = ((py_kp_obj_t *) args[0]);
+            res = orb_save_descriptor(&fp, kpts->kpts);
+            break;
+        }
+        #endif //IMLIB_ENABLE_FIND_KEYPOINTS
+    }
+
+    // ignore unsupported descriptors when saving
+    file_close(&fp);
+
+    // File write error
     if (res != FR_OK) {
-        mp_raise_msg(&mp_type_OSError, (mp_rom_error_text_t) ffs_strerror(res));
+        mp_raise_msg(&mp_type_OSError, (mp_rom_error_text_t) file_strerror(res));
     }
     return mp_const_true;
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_save_descriptor_obj, 2, py_image_save_descriptor);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_save_descriptor_obj, 2, py_image_save_descriptor);
 #endif //IMLIB_ENABLE_IMAGE_FILE_IO
 
-static mp_obj_t py_image_match_descriptor(uint n_args, const mp_obj_t *args, mp_map_t *kw_args)
-{
+static mp_obj_t py_image_match_descriptor(uint n_args, const mp_obj_t *args, mp_map_t *kw_args) {
     mp_obj_t match_obj = mp_const_none;
     const mp_obj_type_t *desc1_type = mp_obj_get_type(args[0]);
     const mp_obj_type_t *desc2_type = mp_obj_get_type(args[1]);
@@ -6943,9 +6964,9 @@ static mp_obj_t py_image_match_descriptor(uint n_args, const mp_obj_t *args, mp_
 
     if (0) {
     #if defined(IMLIB_ENABLE_FIND_LBP)
-    } else if (desc1_type ==  &py_lbp_type) {
-        py_lbp_obj_t *lbp1 = ((py_lbp_obj_t*)args[0]);
-        py_lbp_obj_t *lbp2 = ((py_lbp_obj_t*)args[1]);
+    } else if (desc1_type == &py_lbp_type) {
+        py_lbp_obj_t *lbp1 = ((py_lbp_obj_t *) args[0]);
+        py_lbp_obj_t *lbp2 = ((py_lbp_obj_t *) args[1]);
 
         // Sanity checks
         PY_ASSERT_TYPE(lbp1, &py_lbp_type);
@@ -6956,15 +6977,15 @@ static mp_obj_t py_image_match_descriptor(uint n_args, const mp_obj_t *args, mp_
     #endif //IMLIB_ENABLE_FIND_LBP
     #if defined(IMLIB_ENABLE_FIND_KEYPOINTS)
     } else if (desc1_type == &py_kp_type) {
-        py_kp_obj_t *kpts1 = ((py_kp_obj_t*)args[0]);
-        py_kp_obj_t *kpts2 = ((py_kp_obj_t*)args[1]);
+        py_kp_obj_t *kpts1 = ((py_kp_obj_t *) args[0]);
+        py_kp_obj_t *kpts2 = ((py_kp_obj_t *) args[1]);
         int threshold = py_helper_keyword_int(n_args, args, 2, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_threshold), 85);
         int filter_outliers = py_helper_keyword_int(n_args, args, 3, kw_args, MP_OBJ_NEW_QSTR(MP_QSTR_filter_outliers), false);
 
         // Sanity checks
         PY_ASSERT_TYPE(kpts1, &py_kp_type);
         PY_ASSERT_TYPE(kpts2, &py_kp_type);
-        PY_ASSERT_TRUE_MSG((threshold >=0 && threshold <= 100), "Expected threshold between 0 and 100");
+        PY_ASSERT_TRUE_MSG((threshold >= 0 && threshold <= 100), "Expected threshold between 0 and 100");
 
         int theta = 0;          // Estimated angle of rotation
         int count = 0;          // Number of matches
@@ -6981,10 +7002,10 @@ static mp_obj_t py_image_match_descriptor(uint n_args, const mp_obj_t *args, mp_
             count = orb_match_keypoints(kpts1->kpts, kpts2->kpts, match, threshold, &r, &c, &theta);
 
             // Add matching keypoints to Python list.
-            for (int i=0; i<count*2; i+=2) {
+            for (int i = 0; i < count * 2; i += 2) {
                 mp_obj_t index_obj[2] = {
-                    mp_obj_new_int(match[i+0]),
-                    mp_obj_new_int(match[i+1]),
+                    mp_obj_new_int(match[i + 0]),
+                    mp_obj_new_int(match[i + 1]),
                 };
                 mp_obj_list_append(match_list, mp_obj_new_tuple(2, index_obj));
             }
@@ -6999,12 +7020,12 @@ static mp_obj_t py_image_match_descriptor(uint n_args, const mp_obj_t *args, mp_
 
         py_kptmatch_obj_t *o = m_new_obj(py_kptmatch_obj_t);
         o->base.type = &py_kptmatch_type;
-        o->cx    = mp_obj_new_int(c.x);
-        o->cy    = mp_obj_new_int(c.y);
-        o->x     = mp_obj_new_int(r.x);
-        o->y     = mp_obj_new_int(r.y);
-        o->w     = mp_obj_new_int(r.w);
-        o->h     = mp_obj_new_int(r.h);
+        o->cx = mp_obj_new_int(c.x);
+        o->cy = mp_obj_new_int(c.y);
+        o->x = mp_obj_new_int(r.x);
+        o->y = mp_obj_new_int(r.y);
+        o->w = mp_obj_new_int(r.w);
+        o->h = mp_obj_new_int(r.h);
         o->count = mp_obj_new_int(count);
         o->theta = mp_obj_new_int(theta);
         o->match = match_list;
@@ -7016,27 +7037,20 @@ static mp_obj_t py_image_match_descriptor(uint n_args, const mp_obj_t *args, mp_
 
     return match_obj;
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(py_image_match_descriptor_obj, 2, py_image_match_descriptor);
+static MP_DEFINE_CONST_FUN_OBJ_KW(py_image_match_descriptor_obj, 2, py_image_match_descriptor);
 #endif //IMLIB_ENABLE_DESCRIPTOR
 
 #if defined(IMLIB_ENABLE_FIND_KEYPOINTS) && defined(IMLIB_ENABLE_IMAGE_FILE_IO)
-int py_image_descriptor_from_roi(image_t *img, const char *path, rectangle_t *roi)
-{
+int py_image_descriptor_from_roi(image_t *img, const char *path, rectangle_t *roi) {
     FIL fp;
-    FRESULT res = FR_OK;
-
-    printf("Save Descriptor: ROI(%d %d %d %d)\n", roi->x, roi->y, roi->w, roi->h);
     array_t *kpts = orb_find_keypoints(img, false, 20, 1.5f, 100, CORNER_AGAST, roi);
-    printf("Save Descriptor: KPTS(%d)\n", array_length(kpts));
-
     if (array_length(kpts)) {
-        if ((res = f_open_helper(&fp, path, FA_WRITE|FA_CREATE_ALWAYS)) == FR_OK) {
-            res = orb_save_descriptor(&fp, kpts);
-            f_close(&fp);
-        }
-        // File open/write error
+        file_open(&fp, path, false, FA_WRITE | FA_CREATE_ALWAYS);
+        FRESULT res = orb_save_descriptor(&fp, kpts);
+        file_close(&fp);
+        // File write error
         if (res != FR_OK) {
-            mp_raise_msg(&mp_type_OSError, (mp_rom_error_text_t) ffs_strerror(res));
+            mp_raise_msg(&mp_type_OSError, (mp_rom_error_text_t) file_strerror(res));
         }
     }
     return 0;
@@ -7053,12 +7067,35 @@ static const mp_rom_map_elem_t globals_dict_table[] = {
     {MP_ROM_QSTR(MP_QSTR_YUV422),              MP_ROM_INT(PIXFORMAT_YUV422)},   /* 2BPP/YUV422*/
     {MP_ROM_QSTR(MP_QSTR_JPEG),                MP_ROM_INT(PIXFORMAT_JPEG)},     /* JPEG/COMPRESSED*/
     {MP_ROM_QSTR(MP_QSTR_PNG),                 MP_ROM_INT(PIXFORMAT_PNG)},      /* PNG/COMPRESSED*/
+    {MP_ROM_QSTR(MP_QSTR_PALETTE_RAINBOW),     MP_ROM_INT(COLOR_PALETTE_RAINBOW)},
+    {MP_ROM_QSTR(MP_QSTR_PALETTE_IRONBOW),     MP_ROM_INT(COLOR_PALETTE_IRONBOW)},
+    #if (MICROPY_PY_TOF == 1)
+    {MP_ROM_QSTR(MP_QSTR_PALETTE_DEPTH),       MP_ROM_INT(COLOR_PALETTE_DEPTH)},
+    #endif // MICROPY_PY_TOF == 1
+    #if (OMV_GENX320_ENABLE == 1)
+    {MP_ROM_QSTR(MP_QSTR_PALETTE_EVT_DARK),    MP_ROM_INT(COLOR_PALETTE_EVT_DARK)},
+    {MP_ROM_QSTR(MP_QSTR_PALETTE_EVT_LIGHT),   MP_ROM_INT(COLOR_PALETTE_EVT_LIGHT)},
+    #endif // OMV_GENX320_ENABLE == 1
     {MP_ROM_QSTR(MP_QSTR_AREA),                MP_ROM_INT(IMAGE_HINT_AREA)},
     {MP_ROM_QSTR(MP_QSTR_BILINEAR),            MP_ROM_INT(IMAGE_HINT_BILINEAR)},
     {MP_ROM_QSTR(MP_QSTR_BICUBIC),             MP_ROM_INT(IMAGE_HINT_BICUBIC)},
+    {MP_ROM_QSTR(MP_QSTR_HMIRROR),             MP_ROM_INT(IMAGE_HINT_HMIRROR)},
+    {MP_ROM_QSTR(MP_QSTR_VFLIP),               MP_ROM_INT(IMAGE_HINT_VFLIP)},
+    {MP_ROM_QSTR(MP_QSTR_TRANSPOSE),           MP_ROM_INT(IMAGE_HINT_TRANSPOSE)},
     {MP_ROM_QSTR(MP_QSTR_CENTER),              MP_ROM_INT(IMAGE_HINT_CENTER)},
     {MP_ROM_QSTR(MP_QSTR_EXTRACT_RGB_CHANNEL_FIRST), MP_ROM_INT(IMAGE_HINT_EXTRACT_RGB_CHANNEL_FIRST)},
     {MP_ROM_QSTR(MP_QSTR_APPLY_COLOR_PALETTE_FIRST), MP_ROM_INT(IMAGE_HINT_APPLY_COLOR_PALETTE_FIRST)},
+    {MP_ROM_QSTR(MP_QSTR_SCALE_ASPECT_KEEP),   MP_ROM_INT(IMAGE_HINT_SCALE_ASPECT_KEEP)},
+    {MP_ROM_QSTR(MP_QSTR_SCALE_ASPECT_EXPAND), MP_ROM_INT(IMAGE_HINT_SCALE_ASPECT_EXPAND)},
+    {MP_ROM_QSTR(MP_QSTR_SCALE_ASPECT_IGNORE), MP_ROM_INT(IMAGE_HINT_SCALE_ASPECT_IGNORE)},
+    {MP_ROM_QSTR(MP_QSTR_BLACK_BACKGROUND),    MP_ROM_INT(IMAGE_HINT_BLACK_BACKGROUND)},
+    {MP_ROM_QSTR(MP_QSTR_ROTATE_90),           MP_ROM_INT(IMAGE_HINT_VFLIP | IMAGE_HINT_TRANSPOSE)},
+    {MP_ROM_QSTR(MP_QSTR_ROTATE_180),          MP_ROM_INT(IMAGE_HINT_HMIRROR | IMAGE_HINT_VFLIP)},
+    {MP_ROM_QSTR(MP_QSTR_ROTATE_270),          MP_ROM_INT(IMAGE_HINT_HMIRROR | IMAGE_HINT_TRANSPOSE)},
+    {MP_ROM_QSTR(MP_QSTR_JPEG_SUBSAMPLING_AUTO), MP_ROM_INT(JPEG_SUBSAMPLING_AUTO)},
+    {MP_ROM_QSTR(MP_QSTR_JPEG_SUBSAMPLING_444), MP_ROM_INT(JPEG_SUBSAMPLING_444)},
+    {MP_ROM_QSTR(MP_QSTR_JPEG_SUBSAMPLING_422), MP_ROM_INT(JPEG_SUBSAMPLING_422)},
+    {MP_ROM_QSTR(MP_QSTR_JPEG_SUBSAMPLING_420), MP_ROM_INT(JPEG_SUBSAMPLING_420)},
     #ifdef IMLIB_FIND_TEMPLATE
     {MP_ROM_QSTR(MP_QSTR_SEARCH_EX),           MP_ROM_INT(SEARCH_EX)},
     {MP_ROM_QSTR(MP_QSTR_SEARCH_DS),           MP_ROM_INT(SEARCH_DS)},
@@ -7068,12 +7105,24 @@ static const mp_rom_map_elem_t globals_dict_table[] = {
     {MP_ROM_QSTR(MP_QSTR_CORNER_FAST),         MP_ROM_INT(CORNER_FAST)},
     {MP_ROM_QSTR(MP_QSTR_CORNER_AGAST),        MP_ROM_INT(CORNER_AGAST)},
     #ifdef IMLIB_ENABLE_APRILTAGS
+    #ifdef IMLIB_ENABLE_APRILTAGS_TAG16H5
     {MP_ROM_QSTR(MP_QSTR_TAG16H5),             MP_ROM_INT(TAG16H5)},
+    #endif
+    #ifdef IMLIB_ENABLE_APRILTAGS_TAG25H7
     {MP_ROM_QSTR(MP_QSTR_TAG25H7),             MP_ROM_INT(TAG25H7)},
+    #endif
+    #ifdef IMLIB_ENABLE_APRILTAGS_TAG25H9
     {MP_ROM_QSTR(MP_QSTR_TAG25H9),             MP_ROM_INT(TAG25H9)},
+    #endif
+    #ifdef IMLIB_ENABLE_APRILTAGS_TAG36H10
     {MP_ROM_QSTR(MP_QSTR_TAG36H10),            MP_ROM_INT(TAG36H10)},
+    #endif
+    #ifdef IMLIB_ENABLE_APRILTAGS_TAG36H11
     {MP_ROM_QSTR(MP_QSTR_TAG36H11),            MP_ROM_INT(TAG36H11)},
+    #endif
+    #ifdef IMLIB_ENABLE_APRILTAGS_TAG36ARTOOLKIT
     {MP_ROM_QSTR(MP_QSTR_ARTOOLKIT),           MP_ROM_INT(ARTOOLKIT)},
+    #endif
     #endif
     #ifdef IMLIB_ENABLE_BARCODES
     {MP_ROM_QSTR(MP_QSTR_EAN2),                MP_ROM_INT(BARCODE_EAN2)},
@@ -7093,6 +7142,7 @@ static const mp_rom_map_elem_t globals_dict_table[] = {
     {MP_ROM_QSTR(MP_QSTR_CODE93),              MP_ROM_INT(BARCODE_CODE93)},
     {MP_ROM_QSTR(MP_QSTR_CODE128),             MP_ROM_INT(BARCODE_CODE128)},
     #endif
+    {MP_ROM_QSTR(MP_QSTR_Image),               MP_ROM_PTR(&py_image_type)},
     #if defined(IMLIB_ENABLE_IMAGE_IO)
     {MP_ROM_QSTR(MP_QSTR_ImageIO),             MP_ROM_PTR(&py_imageio_type) },
     #else
@@ -7118,8 +7168,9 @@ static const mp_rom_map_elem_t globals_dict_table[] = {
     {MP_ROM_QSTR(MP_QSTR_yuv_to_grayscale),    MP_ROM_PTR(&py_image_yuv_to_grayscale_obj)},
     {MP_ROM_QSTR(MP_QSTR_yuv_to_rgb),          MP_ROM_PTR(&py_image_yuv_to_rgb_obj)},
     {MP_ROM_QSTR(MP_QSTR_yuv_to_lab),          MP_ROM_PTR(&py_image_yuv_to_lab_obj)},
-    {MP_ROM_QSTR(MP_QSTR_Image),               MP_ROM_PTR(&py_image_load_image_obj)},
+    #ifdef IMLIB_ENABLE_FEATURES
     {MP_ROM_QSTR(MP_QSTR_HaarCascade),         MP_ROM_PTR(&py_image_load_cascade_obj)},
+    #endif
     #if defined(IMLIB_ENABLE_DESCRIPTOR) && defined(IMLIB_ENABLE_IMAGE_FILE_IO)
     {MP_ROM_QSTR(MP_QSTR_load_descriptor),     MP_ROM_PTR(&py_image_load_descriptor_obj)},
     {MP_ROM_QSTR(MP_QSTR_save_descriptor),     MP_ROM_PTR(&py_image_save_descriptor_obj)},
@@ -7134,7 +7185,7 @@ static const mp_rom_map_elem_t globals_dict_table[] = {
     #endif
 };
 
-STATIC MP_DEFINE_CONST_DICT(globals_dict, globals_dict_table);
+static MP_DEFINE_CONST_DICT(globals_dict, globals_dict_table);
 
 const mp_obj_module_t image_module = {
     .base = { &mp_type_module },

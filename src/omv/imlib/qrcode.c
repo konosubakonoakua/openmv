@@ -1,15 +1,33 @@
 /*
- * This file is part of the OpenMV project.
+ * SPDX-License-Identifier: MIT
  *
- * Copyright (c) 2013-2021 Ibrahim Abdelkader <iabdalkader@openmv.io>
- * Copyright (c) 2013-2021 Kwabena W. Agyeman <kwagyeman@openmv.io>
+ * Copyright (C) 2010-2012 Daniel Beer <dlbeer@gmail.com>
+ * Copyright (C) 2013-2024 OpenMV, LLC.
  *
- * This work is licensed under the MIT license, see the file LICENSE for details.
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
  *
  * QR-code recognition library.
  */
 #include "imlib.h"
 #ifdef IMLIB_ENABLE_QRCODES
+
+// *INDENT-OFF*
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 //////// "quirc.h"
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -838,26 +856,16 @@ typedef struct xylf
 }
 xylf_t;
 
-static void lifo_enqueue_fast(lifo_t *ptr, void *data)
+static void lifo_enqueue_fast(lifo_t *ptr, xylf_t *data)
 {
-// we know the structure size is 8 bytes, so don't waste time calling memcpy
-    uint32_t *d = (uint32_t *)(ptr->data + (ptr->len * ptr->data_len));
-    uint32_t *s = (uint32_t *)data;
-//    memcpy(ptr->data + (ptr->len * ptr->data_len), data, ptr->data_len);
-    d[0] = s[0]; d[1] = s[1]; // copy 8 bytes
+    *((xylf_t *)(ptr->data + (ptr->len * ptr->data_len))) = *data;
     ptr->len += 1;
 }
 
-static void lifo_dequeue_fast(lifo_t *ptr, void *data)
+static void lifo_dequeue_fast(lifo_t *ptr, xylf_t *data)
 {
-    // we know the structure size is 8 bytes, so don't waste time calling memcpy
-    uint32_t *s = (uint32_t *)(ptr->data + ((ptr->len-1) * ptr->data_len));
-    uint32_t *d = (uint32_t *)data;
-//    if (data) {
-//        memcpy(data, ptr->data + ((ptr->len - 1) * ptr->data_len), ptr->data_len);
-//    }
-    d[0] = s[0]; d[1] = s[1]; // copy 8 bytes
     ptr->len -= 1;
+    *data = *((xylf_t *)(ptr->data + (ptr->len * ptr->data_len)));
 }
 
 static void flood_fill_seed(struct quirc *q, int x, int y, int from, int to,
@@ -978,7 +986,7 @@ static void threshold(struct quirc *q)
     if (threshold_s < THRESHOLD_S_MIN)
         threshold_s = THRESHOLD_S_MIN;
 
-    fracmul = (32768 * (threshold_s - 1)) / threshold_s; // to use multipy instead of divide (not too many bits or we'll overflow)
+    fracmul = (32768 * (threshold_s - 1)) / threshold_s; // to use multiply instead of divide (not too many bits or we'll overflow)
     // to get the effect used below (a fraction of threshold_s-1/threshold_s
     // The second constant is to reduce the averaged values to compare with the current pixel
     fracmul2 = (0x100000 * (100 - THRESHOLD_T)) / (200 * threshold_s); // use as many bits as possible without overflowing
@@ -2976,7 +2984,7 @@ void imlib_find_qrcodes(list_t *out, image_t *ptr, rectangle_t *roi)
     img.h = roi->h;
     img.pixfmt = PIXFORMAT_GRAYSCALE;
     img.data = grayscale_image;
-    imlib_draw_image(&img, ptr, 0, 0, 1.f, 1.f, roi, -1, 256, NULL, NULL, 0, NULL, NULL);
+    imlib_draw_image(&img, ptr, 0, 0, 1.f, 1.f, roi, -1, 255, NULL, NULL, 0, NULL, NULL, NULL);
 
     quirc_end(controller);
     list_init(out, sizeof(find_qrcodes_list_lnk_data_t));
@@ -3026,4 +3034,4 @@ void imlib_find_qrcodes(list_t *out, image_t *ptr, rectangle_t *roi)
 
     quirc_destroy(controller);
 }
-#endif //IMLIB_ENABLE_QRCODES
+#endif //IMLIB_ENABLE_QRCODES *INDENT-ON*

@@ -42,10 +42,10 @@ sudo apt-get install git build-essential
 ### Install GNU ARM toolchain
 This step can be skipped if your distro package manager provides an ARM toolchain, however this is the gcc toolchain currently in use by the developers. Note the following commands install the toolchain to `/usr/local/arm-none-eabi` and then add it to the PATH variable, for the current terminal session. The toolchain will need to be added to the PATH again if a new terminal session is started. Note the toolchain can be installed in any other location as long as it's added to the PATH.
 ```
-TOOLCHAIN_PATH=/usr/local/arm-none-eabi
-TOOLCHAIN_URL="https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu-rm/10-2020q4/gcc-arm-none-eabi-10-2020-q4-major-x86_64-linux.tar.bz2"
-sudo mkdir ${TOOLCHAIN_PATH}
-wget --no-check-certificate -O - ${TOOLCHAIN_URL} | sudo tar --strip-components=1 -jx -C ${TOOLCHAIN_PATH}
+TOOLCHAIN_PATH=${HOME}/cache/gcc
+TOOLCHAIN_URL="https://developer.arm.com/-/media/Files/downloads/gnu/13.2.rel1/binrel/arm-gnu-toolchain-13.2.rel1-x86_64-arm-none-eabi.tar.xz"
+mkdir -p ${TOOLCHAIN_PATH}
+wget --no-check-certificate -O - ${TOOLCHAIN_URL} | tar --strip-components=1 -Jx -C ${TOOLCHAIN_PATH}
 export PATH=${TOOLCHAIN_PATH}/bin:${PATH}
 ```
 
@@ -61,14 +61,14 @@ The above command will clone this repository along with all of its submodules re
 git clone --depth=1 https://github.com/openmv/openmv.git
 cd openmv
 git submodule update --init --depth=1 --no-single-branch
-git -C src/micropython/ submodule update --init --depth=1
+git -C src/lib/micropython/ submodule update --init --depth=1
 ```
 
 ### Build the firmware
 To build the firmware, run the following commands inside the openmv repository:
 ```bash
 cd openmv
-make -j$(nproc) -C src/micropython/mpy-cross   # Builds Micropython mpy cross-compiler
+make -j$(nproc) -C src/lib/micropython/mpy-cross   # Builds Micropython mpy cross-compiler
 make -j$(nproc) TARGET=<TRAGET_NAME> -C src    # Builds the OpenMV firmware
 ```
 

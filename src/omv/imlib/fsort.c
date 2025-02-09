@@ -1,18 +1,34 @@
 /*
- * This file is part of the OpenMV project.
- * Copyright (c) 2013-2016 Kwabena W. Agyeman <kwagyeman@openmv.io>
- * This work is licensed under the MIT license, see the file LICENSE for details.
+ * SPDX-License-Identifier: MIT
+ *
+ * Copyright (C) 2013-2024 OpenMV, LLC.
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
  *
  * Fast 9 and 25 bin sort.
- *
  */
 #include <stdlib.h>
 #include "fsort.h"
 
 // http://pages.ripco.net/~jgamble/nw.html
 
-static void cmpswp(int *a, int *b)
-{
+static void cmpswp(int *a, int *b) {
     if ((*b) < (*a)) {
         int tmp = *a;
         *a = *b;
@@ -37,41 +53,40 @@ static void cmpswp(int *a, int *b)
 
 // This is graphed in 17 columns.
 
-static void fsort9(int *data)
-{
-    cmpswp(data+0, data+1);
-    cmpswp(data+3, data+4);
-    cmpswp(data+6, data+7);
+static void fsort9(int *data) {
+    cmpswp(data + 0, data + 1);
+    cmpswp(data + 3, data + 4);
+    cmpswp(data + 6, data + 7);
 
-    cmpswp(data+1, data+2);
-    cmpswp(data+4, data+5);
-    cmpswp(data+7, data+8);
+    cmpswp(data + 1, data + 2);
+    cmpswp(data + 4, data + 5);
+    cmpswp(data + 7, data + 8);
 
-    cmpswp(data+0, data+1);
-    cmpswp(data+3, data+4);
-    cmpswp(data+6, data+7);
-    cmpswp(data+2, data+5);
+    cmpswp(data + 0, data + 1);
+    cmpswp(data + 3, data + 4);
+    cmpswp(data + 6, data + 7);
+    cmpswp(data + 2, data + 5);
 
-    cmpswp(data+0, data+3);
-    cmpswp(data+1, data+4);
-    cmpswp(data+5, data+8);
+    cmpswp(data + 0, data + 3);
+    cmpswp(data + 1, data + 4);
+    cmpswp(data + 5, data + 8);
 
-    cmpswp(data+3, data+6);
-    cmpswp(data+4, data+7);
-    cmpswp(data+2, data+5);
+    cmpswp(data + 3, data + 6);
+    cmpswp(data + 4, data + 7);
+    cmpswp(data + 2, data + 5);
 
-    cmpswp(data+0, data+3);
-    cmpswp(data+1, data+4);
-    cmpswp(data+5, data+7);
-    cmpswp(data+2, data+6);
+    cmpswp(data + 0, data + 3);
+    cmpswp(data + 1, data + 4);
+    cmpswp(data + 5, data + 7);
+    cmpswp(data + 2, data + 6);
 
-    cmpswp(data+1, data+3);
-    cmpswp(data+4, data+6);
+    cmpswp(data + 1, data + 3);
+    cmpswp(data + 4, data + 6);
 
-    cmpswp(data+2, data+4);
-    cmpswp(data+5, data+6);
+    cmpswp(data + 2, data + 4);
+    cmpswp(data + 5, data + 6);
 
-    cmpswp(data+2, data+3);
+    cmpswp(data + 2, data + 3);
 }
 
 // Network for N=25, using Bose-Nelson Algorithm.
@@ -109,198 +124,195 @@ static void fsort9(int *data)
 
 // This is graphed in 89 columns.
 
-static void fsort25(int *data)
-{
-    cmpswp(data+1,  data+2);
-    cmpswp(data+4,  data+5);
-    cmpswp(data+7,  data+8);
-    cmpswp(data+10, data+11);
-    cmpswp(data+13, data+14);
-    cmpswp(data+16, data+17);
-    cmpswp(data+19, data+20);
-    cmpswp(data+21, data+22);
-    cmpswp(data+23, data+24);
+static void fsort25(int *data) {
+    cmpswp(data + 1,  data + 2);
+    cmpswp(data + 4,  data + 5);
+    cmpswp(data + 7,  data + 8);
+    cmpswp(data + 10, data + 11);
+    cmpswp(data + 13, data + 14);
+    cmpswp(data + 16, data + 17);
+    cmpswp(data + 19, data + 20);
+    cmpswp(data + 21, data + 22);
+    cmpswp(data + 23, data + 24);
 
-    cmpswp(data+0,  data+2);
-    cmpswp(data+3,  data+5);
-    cmpswp(data+6,  data+8);
-    cmpswp(data+9,  data+11);
-    cmpswp(data+12, data+14);
-    cmpswp(data+15, data+17);
-    cmpswp(data+18, data+20);
-    cmpswp(data+21, data+23);
-    cmpswp(data+22, data+24);
+    cmpswp(data + 0,  data + 2);
+    cmpswp(data + 3,  data + 5);
+    cmpswp(data + 6,  data + 8);
+    cmpswp(data + 9,  data + 11);
+    cmpswp(data + 12, data + 14);
+    cmpswp(data + 15, data + 17);
+    cmpswp(data + 18, data + 20);
+    cmpswp(data + 21, data + 23);
+    cmpswp(data + 22, data + 24);
 
-    cmpswp(data+0,  data+1);
-    cmpswp(data+3,  data+4);
-    cmpswp(data+2,  data+5);
-    cmpswp(data+6,  data+7);
-    cmpswp(data+9,  data+10);
-    cmpswp(data+8,  data+11);
-    cmpswp(data+12, data+13);
-    cmpswp(data+15, data+16);
-    cmpswp(data+14, data+17);
-    cmpswp(data+18, data+19);
-    cmpswp(data+22, data+23);
-    cmpswp(data+20, data+24);
+    cmpswp(data + 0,  data + 1);
+    cmpswp(data + 3,  data + 4);
+    cmpswp(data + 2,  data + 5);
+    cmpswp(data + 6,  data + 7);
+    cmpswp(data + 9,  data + 10);
+    cmpswp(data + 8,  data + 11);
+    cmpswp(data + 12, data + 13);
+    cmpswp(data + 15, data + 16);
+    cmpswp(data + 14, data + 17);
+    cmpswp(data + 18, data + 19);
+    cmpswp(data + 22, data + 23);
+    cmpswp(data + 20, data + 24);
 
-    cmpswp(data+0,  data+3);
-    cmpswp(data+1,  data+4);
-    cmpswp(data+6,  data+9);
-    cmpswp(data+7,  data+10);
-    cmpswp(data+5,  data+11);
-    cmpswp(data+12, data+15);
-    cmpswp(data+13, data+16);
-    cmpswp(data+18, data+22);
-    cmpswp(data+19, data+23);
-    cmpswp(data+17, data+24);
+    cmpswp(data + 0,  data + 3);
+    cmpswp(data + 1,  data + 4);
+    cmpswp(data + 6,  data + 9);
+    cmpswp(data + 7,  data + 10);
+    cmpswp(data + 5,  data + 11);
+    cmpswp(data + 12, data + 15);
+    cmpswp(data + 13, data + 16);
+    cmpswp(data + 18, data + 22);
+    cmpswp(data + 19, data + 23);
+    cmpswp(data + 17, data + 24);
 
-    cmpswp(data+2,  data+4);
-    cmpswp(data+1,  data+3);
-    cmpswp(data+8,  data+10);
-    cmpswp(data+7,  data+9);
-    cmpswp(data+0,  data+6);
-    cmpswp(data+14, data+16);
-    cmpswp(data+13, data+15);
-    cmpswp(data+18, data+21);
-    cmpswp(data+20, data+23);
-    cmpswp(data+11, data+24);
+    cmpswp(data + 2,  data + 4);
+    cmpswp(data + 1,  data + 3);
+    cmpswp(data + 8,  data + 10);
+    cmpswp(data + 7,  data + 9);
+    cmpswp(data + 0,  data + 6);
+    cmpswp(data + 14, data + 16);
+    cmpswp(data + 13, data + 15);
+    cmpswp(data + 18, data + 21);
+    cmpswp(data + 20, data + 23);
+    cmpswp(data + 11, data + 24);
 
-    cmpswp(data+2,  data+3);
-    cmpswp(data+8,  data+9);
-    cmpswp(data+1,  data+7);
-    cmpswp(data+4,  data+10);
-    cmpswp(data+14, data+15);
-    cmpswp(data+19, data+21);
-    cmpswp(data+20, data+22);
-    cmpswp(data+16, data+23);
+    cmpswp(data + 2,  data + 3);
+    cmpswp(data + 8,  data + 9);
+    cmpswp(data + 1,  data + 7);
+    cmpswp(data + 4,  data + 10);
+    cmpswp(data + 14, data + 15);
+    cmpswp(data + 19, data + 21);
+    cmpswp(data + 20, data + 22);
+    cmpswp(data + 16, data + 23);
 
-    cmpswp(data+2,  data+8);
-    cmpswp(data+1,  data+6);
-    cmpswp(data+3,  data+9);
-    cmpswp(data+5,  data+10);
-    cmpswp(data+20, data+21);
-    cmpswp(data+12, data+19);
-    cmpswp(data+15, data+22);
-    cmpswp(data+17, data+23);
+    cmpswp(data + 2,  data + 8);
+    cmpswp(data + 1,  data + 6);
+    cmpswp(data + 3,  data + 9);
+    cmpswp(data + 5,  data + 10);
+    cmpswp(data + 20, data + 21);
+    cmpswp(data + 12, data + 19);
+    cmpswp(data + 15, data + 22);
+    cmpswp(data + 17, data + 23);
 
-    cmpswp(data+2,  data+7);
-    cmpswp(data+4,  data+9);
-    cmpswp(data+12, data+18);
-    cmpswp(data+13, data+20);
-    cmpswp(data+14, data+21);
-    cmpswp(data+16, data+22);
-    cmpswp(data+10, data+23);
+    cmpswp(data + 2,  data + 7);
+    cmpswp(data + 4,  data + 9);
+    cmpswp(data + 12, data + 18);
+    cmpswp(data + 13, data + 20);
+    cmpswp(data + 14, data + 21);
+    cmpswp(data + 16, data + 22);
+    cmpswp(data + 10, data + 23);
 
-    cmpswp(data+2,  data+6);
-    cmpswp(data+5,  data+9);
-    cmpswp(data+4,  data+7);
-    cmpswp(data+14, data+20);
-    cmpswp(data+13, data+18);
-    cmpswp(data+17, data+22);
-    cmpswp(data+11, data+23);
+    cmpswp(data + 2,  data + 6);
+    cmpswp(data + 5,  data + 9);
+    cmpswp(data + 4,  data + 7);
+    cmpswp(data + 14, data + 20);
+    cmpswp(data + 13, data + 18);
+    cmpswp(data + 17, data + 22);
+    cmpswp(data + 11, data + 23);
 
-    cmpswp(data+3,  data+6);
-    cmpswp(data+5,  data+8);
-    cmpswp(data+14, data+19);
-    cmpswp(data+16, data+20);
-    cmpswp(data+17, data+21);
-    cmpswp(data+0,  data+13);
-    cmpswp(data+9,  data+22);
+    cmpswp(data + 3,  data + 6);
+    cmpswp(data + 5,  data + 8);
+    cmpswp(data + 14, data + 19);
+    cmpswp(data + 16, data + 20);
+    cmpswp(data + 17, data + 21);
+    cmpswp(data + 0,  data + 13);
+    cmpswp(data + 9,  data + 22);
 
-    cmpswp(data+5,  data+7);
-    cmpswp(data+4,  data+6);
-    cmpswp(data+14, data+18);
-    cmpswp(data+15, data+19);
-    cmpswp(data+17, data+20);
-    cmpswp(data+0,  data+12);
-    cmpswp(data+8,  data+21);
-    cmpswp(data+10, data+22);
+    cmpswp(data + 5,  data + 7);
+    cmpswp(data + 4,  data + 6);
+    cmpswp(data + 14, data + 18);
+    cmpswp(data + 15, data + 19);
+    cmpswp(data + 17, data + 20);
+    cmpswp(data + 0,  data + 12);
+    cmpswp(data + 8,  data + 21);
+    cmpswp(data + 10, data + 22);
 
-    cmpswp(data+5,  data+6);
-    cmpswp(data+15, data+18);
-    cmpswp(data+17, data+19);
-    cmpswp(data+1,  data+14);
-    cmpswp(data+7,  data+20);
-    cmpswp(data+11, data+22);
+    cmpswp(data + 5,  data + 6);
+    cmpswp(data + 15, data + 18);
+    cmpswp(data + 17, data + 19);
+    cmpswp(data + 1,  data + 14);
+    cmpswp(data + 7,  data + 20);
+    cmpswp(data + 11, data + 22);
 
-    cmpswp(data+16, data+18);
-    cmpswp(data+2,  data+15);
-    cmpswp(data+1,  data+12);
-    cmpswp(data+6,  data+19);
-    cmpswp(data+8,  data+20);
-    cmpswp(data+11, data+21);
+    cmpswp(data + 16, data + 18);
+    cmpswp(data + 2,  data + 15);
+    cmpswp(data + 1,  data + 12);
+    cmpswp(data + 6,  data + 19);
+    cmpswp(data + 8,  data + 20);
+    cmpswp(data + 11, data + 21);
 
-    cmpswp(data+17, data+18);
-    cmpswp(data+2,  data+14);
-    cmpswp(data+3,  data+16);
-    cmpswp(data+7,  data+19);
-    cmpswp(data+10, data+20);
+    cmpswp(data + 17, data + 18);
+    cmpswp(data + 2,  data + 14);
+    cmpswp(data + 3,  data + 16);
+    cmpswp(data + 7,  data + 19);
+    cmpswp(data + 10, data + 20);
 
-    cmpswp(data+2,  data+13);
-    cmpswp(data+4,  data+17);
-    cmpswp(data+5,  data+18);
-    cmpswp(data+8,  data+19);
-    cmpswp(data+11, data+20);
+    cmpswp(data + 2,  data + 13);
+    cmpswp(data + 4,  data + 17);
+    cmpswp(data + 5,  data + 18);
+    cmpswp(data + 8,  data + 19);
+    cmpswp(data + 11, data + 20);
 
-    cmpswp(data+2,  data+12);
-    cmpswp(data+5,  data+17);
-    cmpswp(data+4,  data+16);
-    cmpswp(data+3,  data+13);
-    cmpswp(data+9,  data+19);
+    cmpswp(data + 2,  data + 12);
+    cmpswp(data + 5,  data + 17);
+    cmpswp(data + 4,  data + 16);
+    cmpswp(data + 3,  data + 13);
+    cmpswp(data + 9,  data + 19);
 
-    cmpswp(data+5,  data+16);
-    cmpswp(data+3,  data+12);
-    cmpswp(data+4,  data+14);
-    cmpswp(data+10, data+19);
+    cmpswp(data + 5,  data + 16);
+    cmpswp(data + 3,  data + 12);
+    cmpswp(data + 4,  data + 14);
+    cmpswp(data + 10, data + 19);
 
-    cmpswp(data+5,  data+15);
-    cmpswp(data+4,  data+12);
-    cmpswp(data+11, data+19);
-    cmpswp(data+9,  data+16);
-    cmpswp(data+10, data+17);
+    cmpswp(data + 5,  data + 15);
+    cmpswp(data + 4,  data + 12);
+    cmpswp(data + 11, data + 19);
+    cmpswp(data + 9,  data + 16);
+    cmpswp(data + 10, data + 17);
 
-    cmpswp(data+5,  data+14);
-    cmpswp(data+8,  data+15);
-    cmpswp(data+11, data+18);
-    cmpswp(data+10, data+16);
+    cmpswp(data + 5,  data + 14);
+    cmpswp(data + 8,  data + 15);
+    cmpswp(data + 11, data + 18);
+    cmpswp(data + 10, data + 16);
 
-    cmpswp(data+5,  data+13);
-    cmpswp(data+7,  data+14);
-    cmpswp(data+11, data+17);
+    cmpswp(data + 5,  data + 13);
+    cmpswp(data + 7,  data + 14);
+    cmpswp(data + 11, data + 17);
 
-    cmpswp(data+5,  data+12);
-    cmpswp(data+6,  data+13);
-    cmpswp(data+8,  data+14);
-    cmpswp(data+11, data+16);
+    cmpswp(data + 5,  data + 12);
+    cmpswp(data + 6,  data + 13);
+    cmpswp(data + 8,  data + 14);
+    cmpswp(data + 11, data + 16);
 
-    cmpswp(data+6,  data+12);
-    cmpswp(data+8,  data+13);
-    cmpswp(data+10, data+14);
-    cmpswp(data+11, data+15);
+    cmpswp(data + 6,  data + 12);
+    cmpswp(data + 8,  data + 13);
+    cmpswp(data + 10, data + 14);
+    cmpswp(data + 11, data + 15);
 
-    cmpswp(data+7,  data+12);
-    cmpswp(data+9,  data+13);
-    cmpswp(data+11, data+14);
+    cmpswp(data + 7,  data + 12);
+    cmpswp(data + 9,  data + 13);
+    cmpswp(data + 11, data + 14);
 
-    cmpswp(data+8,  data+12);
-    cmpswp(data+11, data+13);
+    cmpswp(data + 8,  data + 12);
+    cmpswp(data + 11, data + 13);
 
-    cmpswp(data+9, data+12);
+    cmpswp(data + 9, data + 12);
 
-    cmpswp(data+10, data+12);
+    cmpswp(data + 10, data + 12);
 
-    cmpswp(data+11, data+12);
+    cmpswp(data + 11, data + 12);
 }
 
-static int fsort_compare(const void *a, const void *b)
-{
+static int fsort_compare(const void *a, const void *b) {
     return (*((int *) a)) - (*((int *) b));
 }
 
-void fsort(int *data, int n)
-{
-    switch(n) {
+void fsort(int *data, int n) {
+    switch (n) {
         case 1: return;
         case 9: fsort9(data); return;
         case 25: fsort25(data); return;

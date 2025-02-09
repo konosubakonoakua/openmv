@@ -1,3 +1,25 @@
+# SPDX-License-Identifier: MIT
+#
+# Copyright (C) 2021-2024 OpenMV, LLC.
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in
+# all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+# THE SOFTWARE.
+
 # Need to redefine these variables here.
 set(TOP_DIR                 $ENV{TOP_DIR})
 set(TARGET                  $ENV{TARGET})
@@ -7,10 +29,7 @@ set(BIN_DIR                 ${TOP_DIR}/build/bin)
 set(OMV_DIR                 omv)
 set(UVC_DIR                 uvc)
 set(CM4_DIR                 cm4)
-set(BOOTLDR_DIR             bootloader)
-set(CUBEAI_DIR              stm32cubeai)
 set(CMSIS_DIR               hal/cmsis)
-#set(MICROPY_DIR micropython)
 set(LEPTON_DIR              drivers/lepton)
 set(LSM6DS3_DIR             drivers/lsm6ds3)
 set(WINC1500_DIR            drivers/winc1500)
@@ -20,17 +39,26 @@ set(MLX90641_DIR            drivers/mlx90641)
 set(OPENPDM_DIR             ${TOP_DIR}/lib/openpdm)
 set(TENSORFLOW_DIR          ${TOP_DIR}/lib/libtf)
 set(OMV_BOARD_CONFIG_DIR    ${TOP_DIR}/${OMV_DIR}/boards/${TARGET}/)
-#set(MP_BOARD_CONFIG_DIR    ${TOP_DIR}/${MICROPY_DIR}/ports/${PORT}/boards/${TARGET}/
-set(MPY_LIB_DIR             ${TOP_DIR}/../scripts/libraries)
 set(OMV_COMMON_DIR          ${TOP_DIR}/${OMV_DIR}/common)
 set(PORT_DIR                ${TOP_DIR}/${OMV_DIR}/ports/${PORT})
+set(MICROPY_MANIFEST_OMV_LIB_DIR    ${TOP_DIR}/../scripts/libraries)
 
 # Include board cmake fragment
 include(${OMV_BOARD_CONFIG_DIR}/omv_boardconfig.cmake)
 
+get_target_property(MICROPY_SOURCES ${MICROPY_TARGET} SOURCES)
+list(REMOVE_ITEM MICROPY_SOURCES pendsv.c main.c)
+set_property(TARGET ${MICROPY_TARGET} PROPERTY SOURCES ${MICROPY_SOURCES})
+
+target_link_options(${MICROPY_TARGET} PRIVATE
+    -Wl,--wrap=tud_cdc_rx_cb
+    -Wl,--wrap=mp_hal_stdout_tx_strn
+)
+
 target_compile_definitions(${MICROPY_TARGET} PRIVATE
     ARM_MATH_CM0PLUS
     ${OMV_BOARD_MODULES_DEFINITIONS}
+    CMSIS_MCU_H="${CMSIS_MCU_H}"
 )
 
 target_link_libraries(${MICROPY_TARGET}
@@ -56,7 +84,6 @@ pico_set_linker_script(${MICROPY_TARGET} ${BUILD}/rp2.ld)
 file(GLOB OMV_SRC_QSTR1 ${TOP_DIR}/${OMV_DIR}/modules/*.c)
 file(GLOB OMV_SRC_QSTR2 ${TOP_DIR}/${OMV_DIR}/ports/${PORT}/modules/*.c)
 list(APPEND MICROPY_SOURCE_QSTR ${OMV_SRC_QSTR1} ${OMV_SRC_QSTR2})
-set(MPY_PENDSV_ENTRIES PENDSV_DISPATCH_CDC,)
 
 target_include_directories(${MICROPY_TARGET} PRIVATE
     ${TOP_DIR}/${CMSIS_DIR}/include/
@@ -95,15 +122,15 @@ target_sources(${MICROPY_TARGET} PRIVATE
     ${TOP_DIR}/${OMV_DIR}/alloc/unaligned_memcpy.c
 
     ${TOP_DIR}/${OMV_DIR}/common/array.c
-    ${TOP_DIR}/${OMV_DIR}/common/ff_wrapper.c
-    ${TOP_DIR}/${OMV_DIR}/common/ini.c
     ${TOP_DIR}/${OMV_DIR}/common/ringbuf.c
     ${TOP_DIR}/${OMV_DIR}/common/trace.c
     ${TOP_DIR}/${OMV_DIR}/common/mutex.c
+    ${TOP_DIR}/${OMV_DIR}/common/pendsv.c
     ${TOP_DIR}/${OMV_DIR}/common/usbdbg.c
     ${TOP_DIR}/${OMV_DIR}/common/tinyusb_debug.c
-    ${TOP_DIR}/${OMV_DIR}/common/sensor_utils.c
-    ${TOP_DIR}/${OMV_DIR}/common/factoryreset.c
+    ${TOP_DIR}/${OMV_DIR}/common/file_utils.c
+    ${TOP_DIR}/${OMV_DIR}/common/mp_utils.c
+    ${TOP_DIR}/${OMV_DIR}/common/omv_csi.c
 
     ${TOP_DIR}/${OMV_DIR}/sensors/ov2640.c
     ${TOP_DIR}/${OMV_DIR}/sensors/ov5640.c
@@ -145,7 +172,7 @@ target_sources(${MICROPY_TARGET} PRIVATE
     ${TOP_DIR}/${OMV_DIR}/imlib/integral_mw.c
     ${TOP_DIR}/${OMV_DIR}/imlib/isp.c
     ${TOP_DIR}/${OMV_DIR}/imlib/jpegd.c
-    ${TOP_DIR}/${OMV_DIR}/imlib/jpeg.c
+    ${TOP_DIR}/${OMV_DIR}/imlib/jpege.c
     ${TOP_DIR}/${OMV_DIR}/imlib/lodepng.c
     ${TOP_DIR}/${OMV_DIR}/imlib/png.c
     ${TOP_DIR}/${OMV_DIR}/imlib/kmeans.c
@@ -158,7 +185,6 @@ target_sources(${MICROPY_TARGET} PRIVATE
     ${TOP_DIR}/${OMV_DIR}/imlib/orb.c
     ${TOP_DIR}/${OMV_DIR}/imlib/phasecorrelation.c
     ${TOP_DIR}/${OMV_DIR}/imlib/point.c
-    ${TOP_DIR}/${OMV_DIR}/imlib/pool.c
     ${TOP_DIR}/${OMV_DIR}/imlib/ppm.c
     ${TOP_DIR}/${OMV_DIR}/imlib/qrcode.c
     ${TOP_DIR}/${OMV_DIR}/imlib/qsort.c
@@ -174,15 +200,21 @@ target_sources(${MICROPY_TARGET} PRIVATE
     ${TOP_DIR}/${OMV_DIR}/imlib/zbar.c
 
     ${TOP_DIR}/${OMV_DIR}/ports/${PORT}/main.c
-    ${TOP_DIR}/${OMV_DIR}/ports/${PORT}/cambus.c
-    ${TOP_DIR}/${OMV_DIR}/ports/${PORT}/sensor.c
+    ${TOP_DIR}/${OMV_DIR}/ports/${PORT}/omv_gpio.c
+    ${TOP_DIR}/${OMV_DIR}/ports/${PORT}/omv_i2c.c
+    ${TOP_DIR}/${OMV_DIR}/ports/${PORT}/omv_csi.c
 
     ${OMV_USER_MODULES}
 )
+set_source_files_properties(
+    ${TOP_DIR}/${OMV_DIR}/imlib/fmath.c
+    PROPERTIES
+    COMPILE_OPTIONS "-fno-strict-aliasing"
+)
 
-if(MICROPY_PY_SENSOR)
+if(MICROPY_PY_CSI)
     target_compile_definitions(${MICROPY_TARGET} PRIVATE
-        MICROPY_PY_SENSOR=1
+        MICROPY_PY_CSI=1
     )
 
     # Generate DCMI PIO header
@@ -225,6 +257,7 @@ if(MICROPY_PY_ULAB)
         ${MICROPY_ULAB_DIR}/code/ndarray_operators.c
         ${MICROPY_ULAB_DIR}/code/ndarray_properties.c
         ${MICROPY_ULAB_DIR}/code/numpy/approx.c
+        ${MICROPY_ULAB_DIR}/code/numpy/bitwise.c
         ${MICROPY_ULAB_DIR}/code/numpy/carray/carray.c
         ${MICROPY_ULAB_DIR}/code/numpy/carray/carray_tools.c
         ${MICROPY_ULAB_DIR}/code/numpy/compare.c
@@ -239,9 +272,11 @@ if(MICROPY_PY_ULAB)
         ${MICROPY_ULAB_DIR}/code/numpy/numerical.c
         ${MICROPY_ULAB_DIR}/code/numpy/numpy.c
         ${MICROPY_ULAB_DIR}/code/numpy/poly.c
+        ${MICROPY_ULAB_DIR}/code/numpy/random/random.c
         ${MICROPY_ULAB_DIR}/code/numpy/stats.c
         ${MICROPY_ULAB_DIR}/code/numpy/transform.c
         ${MICROPY_ULAB_DIR}/code/numpy/vector.c
+        ${MICROPY_ULAB_DIR}/code/scipy/integrate/integrate.c
         ${MICROPY_ULAB_DIR}/code/scipy/linalg/linalg.c
         ${MICROPY_ULAB_DIR}/code/scipy/optimize/optimize.c
         ${MICROPY_ULAB_DIR}/code/scipy/scipy.c
@@ -264,7 +299,7 @@ if(MICROPY_PY_ULAB)
 endif()
 
 target_compile_definitions(${MICROPY_TARGET} PRIVATE
-    MICROPY_BOARD_PENDSV_ENTRIES=${MPY_PENDSV_ENTRIES}
+    MP_CONFIGFILE="${TOP_DIR}/${OMV_DIR}/ports/${PORT}/omv_mpconfigport.h"
 )
 
 add_custom_command(TARGET ${MICROPY_TARGET}

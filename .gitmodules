@@ -1,7 +1,13 @@
 [submodule "src/micropython"]
-	path = src/micropython
+	path = src/lib/micropython
 	url = https://github.com/openmv/micropython.git
 	branch = openmv
 [submodule "src/omv/modules/ulab"]
 	path = src/omv/modules/ulab
 	url = https://github.com/v923z/micropython-ulab.git
+[submodule "src/lib/tflm/libtflm"]
+	path = src/lib/tflm/libtflm
+	url = https://github.com/openmv/libtflm.git
+[submodule "src/lib/tinyusb"]
+	path = src/lib/tinyusb
+	url = https://github.com/hathach/tinyusb

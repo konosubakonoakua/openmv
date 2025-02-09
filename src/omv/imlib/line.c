@@ -1,17 +1,31 @@
 /*
- * This file is part of the OpenMV project.
+ * SPDX-License-Identifier: MIT
  *
- * Copyright (c) 2013-2021 Ibrahim Abdelkader <iabdalkader@openmv.io>
- * Copyright (c) 2013-2021 Kwabena W. Agyeman <kwagyeman@openmv.io>
+ * Copyright (C) 2013-2024 OpenMV, LLC.
  *
- * This work is licensed under the MIT license, see the file LICENSE for details.
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
  *
  * Line functions.
  */
 #include "imlib.h"
 
-static void pixel_magnitude(image_t *ptr, int x, int y, int *theta, uint32_t *mag)
-{
+static void pixel_magnitude(image_t *ptr, int x, int y, int *theta, uint32_t *mag) {
     switch (ptr->pixfmt) {
         case PIXFORMAT_BINARY: {
             uint32_t *row_ptr = IMAGE_COMPUTE_BINARY_PIXEL_ROW_PTR(ptr, y);
@@ -19,21 +33,25 @@ static void pixel_magnitude(image_t *ptr, int x, int y, int *theta, uint32_t *ma
             int x_acc = 0;
             int y_acc = 0;
 
-            if (y != 0) row_ptr -= ((ptr->w + UINT32_T_MASK) >> UINT32_T_SHIFT);
+            if (y != 0) {
+                row_ptr -= ((ptr->w + UINT32_T_MASK) >> UINT32_T_SHIFT);
+            }
 
             pixel = COLOR_BINARY_TO_GRAYSCALE(IMAGE_GET_BINARY_PIXEL_FAST(row_ptr, IM_MAX(x - 1, 0)));
             x_acc += pixel * +1; // x[0,0] -> pixel * +1
             y_acc += pixel * +1; // y[0,0] -> pixel * +1
 
             pixel = COLOR_BINARY_TO_GRAYSCALE(IMAGE_GET_BINARY_PIXEL_FAST(row_ptr, x));
-                                 // x[0,1] -> pixel * 0
+            // x[0,1] -> pixel * 0
             y_acc += pixel * +2; // y[0,1] -> pixel * +2
 
             pixel = COLOR_BINARY_TO_GRAYSCALE(IMAGE_GET_BINARY_PIXEL_FAST(row_ptr, IM_MIN(x + 1, ptr->w - 1)));
             x_acc += pixel * -1; // x[0,2] -> pixel * -1
             y_acc += pixel * +1; // y[0,2] -> pixel * +1
 
-            if (y != 0) row_ptr += ((ptr->w + UINT32_T_MASK) >> UINT32_T_SHIFT);
+            if (y != 0) {
+                row_ptr += ((ptr->w + UINT32_T_MASK) >> UINT32_T_SHIFT);
+            }
 
             pixel = COLOR_BINARY_TO_GRAYSCALE(IMAGE_GET_BINARY_PIXEL_FAST(row_ptr, IM_MAX(x - 1, 0)));
             x_acc += pixel * +2; // x[1,0] -> pixel * +2
@@ -47,24 +65,30 @@ static void pixel_magnitude(image_t *ptr, int x, int y, int *theta, uint32_t *ma
             x_acc += pixel * -2; // x[1,2] -> pixel * -2
                                  // y[1,2] -> pixel * 0
 
-            if (y != (ptr->h - 1)) row_ptr += ((ptr->w + UINT32_T_MASK) >> UINT32_T_SHIFT);
+            if (y != (ptr->h - 1)) {
+                row_ptr += ((ptr->w + UINT32_T_MASK) >> UINT32_T_SHIFT);
+            }
 
             pixel = COLOR_BINARY_TO_GRAYSCALE(IMAGE_GET_BINARY_PIXEL_FAST(row_ptr, IM_MAX(x - 1, 0)));
             x_acc += pixel * +1; // x[2,0] -> pixel * +1
             y_acc += pixel * -1; // y[2,0] -> pixel * -1
 
             pixel = COLOR_BINARY_TO_GRAYSCALE(IMAGE_GET_BINARY_PIXEL_FAST(row_ptr, x));
-                                 // x[2,1] -> pixel * 0
+            // x[2,1] -> pixel * 0
             y_acc += pixel * -2; // y[2,1] -> pixel * -2
 
             pixel = COLOR_BINARY_TO_GRAYSCALE(IMAGE_GET_BINARY_PIXEL_FAST(row_ptr, IM_MIN(x + 1, ptr->w - 1)));
             x_acc += pixel * -1; // x[2,2] -> pixel * -1
             y_acc += pixel * -1; // y[2,2] -> pixel * -1
 
-            if (y != (ptr->h - 1)) row_ptr -= ((ptr->w + UINT32_T_MASK) >> UINT32_T_SHIFT);
+            if (y != (ptr->h - 1)) {
+                row_ptr -= ((ptr->w + UINT32_T_MASK) >> UINT32_T_SHIFT);
+            }
 
             *theta = fast_roundf((x_acc ? fast_atan2f(y_acc, x_acc) : 1.570796f) * 57.295780) % 180; // * (180 / PI)
-            if (*theta < 0) *theta += 180;
+            if (*theta < 0) {
+                *theta += 180;
+            }
             *mag = fast_roundf(fast_sqrtf((x_acc * x_acc) + (y_acc * y_acc)));
             break;
         }
@@ -74,21 +98,25 @@ static void pixel_magnitude(image_t *ptr, int x, int y, int *theta, uint32_t *ma
             int x_acc = 0;
             int y_acc = 0;
 
-            if (y != 0) row_ptr -= ptr->w;
+            if (y != 0) {
+                row_ptr -= ptr->w;
+            }
 
             pixel = IMAGE_GET_GRAYSCALE_PIXEL_FAST(row_ptr, IM_MAX(x - 1, 0));
             x_acc += pixel * +1; // x[0,0] -> pixel * +1
             y_acc += pixel * +1; // y[0,0] -> pixel * +1
 
             pixel = IMAGE_GET_GRAYSCALE_PIXEL_FAST(row_ptr, x);
-                                 // x[0,1] -> pixel * 0
+            // x[0,1] -> pixel * 0
             y_acc += pixel * +2; // y[0,1] -> pixel * +2
 
             pixel = IMAGE_GET_GRAYSCALE_PIXEL_FAST(row_ptr, IM_MIN(x + 1, ptr->w - 1));
             x_acc += pixel * -1; // x[0,2] -> pixel * -1
             y_acc += pixel * +1; // y[0,2] -> pixel * +1
 
-            if (y != 0) row_ptr += ptr->w;
+            if (y != 0) {
+                row_ptr += ptr->w;
+            }
 
             pixel = IMAGE_GET_GRAYSCALE_PIXEL_FAST(row_ptr, IM_MAX(x - 1, 0));
             x_acc += pixel * +2; // x[1,0] -> pixel * +2
@@ -102,24 +130,30 @@ static void pixel_magnitude(image_t *ptr, int x, int y, int *theta, uint32_t *ma
             x_acc += pixel * -2; // x[1,2] -> pixel * -2
                                  // y[1,2] -> pixel * 0
 
-            if (y != (ptr->h - 1)) row_ptr += ptr->w;
+            if (y != (ptr->h - 1)) {
+                row_ptr += ptr->w;
+            }
 
             pixel = IMAGE_GET_GRAYSCALE_PIXEL_FAST(row_ptr, IM_MAX(x - 1, 0));
             x_acc += pixel * +1; // x[2,0] -> pixel * +1
             y_acc += pixel * -1; // y[2,0] -> pixel * -1
 
             pixel = IMAGE_GET_GRAYSCALE_PIXEL_FAST(row_ptr, x);
-                                 // x[2,1] -> pixel * 0
+            // x[2,1] -> pixel * 0
             y_acc += pixel * -2; // y[2,1] -> pixel * -2
 
             pixel = IMAGE_GET_GRAYSCALE_PIXEL_FAST(row_ptr, IM_MIN(x + 1, ptr->w - 1));
             x_acc += pixel * -1; // x[2,2] -> pixel * -1
             y_acc += pixel * -1; // y[2,2] -> pixel * -1
 
-            if (y != (ptr->h - 1)) row_ptr -= ptr->w;
+            if (y != (ptr->h - 1)) {
+                row_ptr -= ptr->w;
+            }
 
             *theta = fast_roundf((x_acc ? fast_atan2f(y_acc, x_acc) : 1.570796f) * 57.295780) % 180; // * (180 / PI)
-            if (*theta < 0) *theta += 180;
+            if (*theta < 0) {
+                *theta += 180;
+            }
             *mag = fast_roundf(fast_sqrtf((x_acc * x_acc) + (y_acc * y_acc)));
             break;
         }
@@ -129,21 +163,25 @@ static void pixel_magnitude(image_t *ptr, int x, int y, int *theta, uint32_t *ma
             int x_acc = 0;
             int y_acc = 0;
 
-            if (y != 0) row_ptr -= ptr->w;
+            if (y != 0) {
+                row_ptr -= ptr->w;
+            }
 
             pixel = COLOR_RGB565_TO_GRAYSCALE(IMAGE_GET_RGB565_PIXEL_FAST(row_ptr, IM_MAX(x - 1, 0)));
             x_acc += pixel * +1; // x[0,0] -> pixel * +1
             y_acc += pixel * +1; // y[0,0] -> pixel * +1
 
             pixel = COLOR_RGB565_TO_GRAYSCALE(IMAGE_GET_RGB565_PIXEL_FAST(row_ptr, x));
-                                 // x[0,1] -> pixel * 0
+            // x[0,1] -> pixel * 0
             y_acc += pixel * +2; // y[0,1] -> pixel * +2
 
             pixel = COLOR_RGB565_TO_GRAYSCALE(IMAGE_GET_RGB565_PIXEL_FAST(row_ptr, IM_MIN(x + 1, ptr->w - 1)));
             x_acc += pixel * -1; // x[0,2] -> pixel * -1
             y_acc += pixel * +1; // y[0,2] -> pixel * +1
 
-            if (y != 0) row_ptr += ptr->w;
+            if (y != 0) {
+                row_ptr += ptr->w;
+            }
 
             pixel = COLOR_RGB565_TO_GRAYSCALE(IMAGE_GET_RGB565_PIXEL_FAST(row_ptr, IM_MAX(x - 1, 0)));
             x_acc += pixel * +2; // x[1,0] -> pixel * +2
@@ -157,24 +195,30 @@ static void pixel_magnitude(image_t *ptr, int x, int y, int *theta, uint32_t *ma
             x_acc += pixel * -2; // x[1,2] -> pixel * -2
                                  // y[1,2] -> pixel * 0
 
-            if (y != (ptr->h - 1)) row_ptr += ptr->w;
+            if (y != (ptr->h - 1)) {
+                row_ptr += ptr->w;
+            }
 
             pixel = COLOR_RGB565_TO_GRAYSCALE(IMAGE_GET_RGB565_PIXEL_FAST(row_ptr, IM_MAX(x - 1, 0)));
             x_acc += pixel * +1; // x[2,0] -> pixel * +1
             y_acc += pixel * -1; // y[2,0] -> pixel * -1
 
             pixel = COLOR_RGB565_TO_GRAYSCALE(IMAGE_GET_RGB565_PIXEL_FAST(row_ptr, x));
-                                 // x[2,1] -> pixel * 0
+            // x[2,1] -> pixel * 0
             y_acc += pixel * -2; // y[2,1] -> pixel * -2
 
             pixel = COLOR_RGB565_TO_GRAYSCALE(IMAGE_GET_RGB565_PIXEL_FAST(row_ptr, IM_MIN(x + 1, ptr->w - 1)));
             x_acc += pixel * -1; // x[2,2] -> pixel * -1
             y_acc += pixel * -1; // y[2,2] -> pixel * -1
 
-            if (y != (ptr->h - 1)) row_ptr -= ptr->w;
+            if (y != (ptr->h - 1)) {
+                row_ptr -= ptr->w;
+            }
 
             *theta = fast_roundf((x_acc ? fast_atan2f(y_acc, x_acc) : 1.570796f) * 57.295780) % 180; // * (180 / PI)
-            if (*theta < 0) *theta += 180;
+            if (*theta < 0) {
+                *theta += 180;
+            }
             *mag = fast_roundf(fast_sqrtf((x_acc * x_acc) + (y_acc * y_acc)));
             break;
         }
@@ -186,8 +230,7 @@ static void pixel_magnitude(image_t *ptr, int x, int y, int *theta, uint32_t *ma
 
 // http://www.brackeen.com/vga/source/djgpp20/lines.c.html
 // http://www.brackeen.com/vga/source/bc31/lines.c.html
-static bool merge_line(line_t *big, line_t *small, unsigned int threshold)
-{
+static bool merge_line(line_t *big, line_t *small, unsigned int threshold) {
     int dx = big->x2 - big->x1; // the horizontal distance of the line
     int dy = big->y2 - big->y1; // the vertical distance of the line
     int dxabs = abs(dx);
@@ -201,13 +244,18 @@ static bool merge_line(line_t *big, line_t *small, unsigned int threshold)
 
     int x_diff_0 = (px - small->x1);
     int y_diff_0 = (py - small->y1);
-    if (fast_roundf(fast_sqrtf((x_diff_0 * x_diff_0) + (y_diff_0 * y_diff_0))) <= threshold) return true;
+    if (fast_roundf(fast_sqrtf((x_diff_0 * x_diff_0) + (y_diff_0 * y_diff_0))) <= threshold) {
+        return true;
+    }
     int x_diff_1 = (px - small->x2);
     int y_diff_1 = (py - small->y2);
-    if (fast_roundf(fast_sqrtf((x_diff_1 * x_diff_1) + (y_diff_1 * y_diff_1))) <= threshold) return true;
+    if (fast_roundf(fast_sqrtf((x_diff_1 * x_diff_1) + (y_diff_1 * y_diff_1))) <= threshold) {
+        return true;
+    }
 
-    if (dxabs >= dyabs) { // the line is more horizontal than vertical
-        for(int i = 0; i < dxabs; i++) {
+    if (dxabs >= dyabs) {
+        // the line is more horizontal than vertical
+        for (int i = 0; i < dxabs; i++) {
             y += dyabs;
 
             if (y >= dxabs) {
@@ -219,13 +267,18 @@ static bool merge_line(line_t *big, line_t *small, unsigned int threshold)
 
             x_diff_0 = (px - small->x1);
             y_diff_0 = (py - small->y1);
-            if (fast_roundf(fast_sqrtf((x_diff_0 * x_diff_0) + (y_diff_0 * y_diff_0))) <= threshold) return true;
+            if (fast_roundf(fast_sqrtf((x_diff_0 * x_diff_0) + (y_diff_0 * y_diff_0))) <= threshold) {
+                return true;
+            }
             x_diff_1 = (px - small->x2);
             y_diff_1 = (py - small->y2);
-            if (fast_roundf(fast_sqrtf((x_diff_1 * x_diff_1) + (y_diff_1 * y_diff_1))) <= threshold) return true;
+            if (fast_roundf(fast_sqrtf((x_diff_1 * x_diff_1) + (y_diff_1 * y_diff_1))) <= threshold) {
+                return true;
+            }
         }
-    } else { // the line is more vertical than horizontal
-        for(int i = 0; i < dyabs; i++) {
+    } else {
+        // the line is more vertical than horizontal
+        for (int i = 0; i < dyabs; i++) {
             x += dxabs;
 
             if (x >= dyabs) {
@@ -237,18 +290,21 @@ static bool merge_line(line_t *big, line_t *small, unsigned int threshold)
 
             x_diff_0 = (px - small->x1);
             y_diff_0 = (py - small->y1);
-            if (fast_roundf(fast_sqrtf((x_diff_0 * x_diff_0) + (y_diff_0 * y_diff_0))) <= threshold) return true;
+            if (fast_roundf(fast_sqrtf((x_diff_0 * x_diff_0) + (y_diff_0 * y_diff_0))) <= threshold) {
+                return true;
+            }
             x_diff_1 = (px - small->x2);
             y_diff_1 = (py - small->y2);
-            if (fast_roundf(fast_sqrtf((x_diff_1 * x_diff_1) + (y_diff_1 * y_diff_1))) <= threshold) return true;
+            if (fast_roundf(fast_sqrtf((x_diff_1 * x_diff_1) + (y_diff_1 * y_diff_1))) <= threshold) {
+                return true;
+            }
         }
     }
 
     return false;
 }
 
-void merge_alot(list_t *out, int threshold, int theta_threshold)
-{
+void merge_alot(list_t *out, int threshold, int theta_threshold) {
     for (;;) {
         bool merge_occured = false;
 
@@ -275,10 +331,14 @@ void merge_alot(list_t *out, int threshold, int theta_threshold)
                 int theta_diff_2 = (theta_diff >= 90) ? (180 - theta_diff) : theta_diff;
 
                 if ((theta_diff_2 <= theta_threshold) && merge_line((length_0 > length_1) ?
-                            &lnk_line.line : &tmp_line.line, (length_0 <= length_1) ? &lnk_line.line : &tmp_line.line, threshold)) {
+                                                                    &lnk_line.line : &tmp_line.line,
+                                                                    (length_0 <= length_1) ? &lnk_line.line : &tmp_line.line,
+                                                                    threshold)) {
 
-                    if (abs(x_diff_0) >= abs(y_diff_0)) { // the line is more horizontal than vertical
-                        if (x_diff_0 < 0) { // Make sure x slope is positive for the next part.
+                    if (abs(x_diff_0) >= abs(y_diff_0)) {
+                        // the line is more horizontal than vertical
+                        if (x_diff_0 < 0) {
+                            // Make sure x slope is positive for the next part.
                             int temp_x = lnk_line.line.x1;
                             lnk_line.line.x1 = lnk_line.line.x2;
                             lnk_line.line.x2 = temp_x;
@@ -289,7 +349,8 @@ void merge_alot(list_t *out, int threshold, int theta_threshold)
                             y_diff_0 = (lnk_line.line.y2 - lnk_line.line.y1);
                         }
 
-                        if (x_diff_1 < 0) { // Make sure x slope is positive for the next part.
+                        if (x_diff_1 < 0) {
+                            // Make sure x slope is positive for the next part.
                             int temp_x = tmp_line.line.x1;
                             tmp_line.line.x1 = tmp_line.line.x2;
                             tmp_line.line.x2 = temp_x;
@@ -315,8 +376,10 @@ void merge_alot(list_t *out, int threshold, int theta_threshold)
                             lnk_line.line.y2 = tmp_line.line.y2 + ((y_diff_0 * (x_max - tmp_line.line.x2)) / x_diff_0);
                             lnk_line.line.x2 = x_max;
                         }
-                    } else { // the line is more vertical than horizontal
-                        if (y_diff_0 < 0) { // Make sure y slope is positive for the next part.
+                    } else {
+                        // the line is more vertical than horizontal
+                        if (y_diff_0 < 0) {
+                            // Make sure y slope is positive for the next part.
                             int temp_x = lnk_line.line.x1;
                             lnk_line.line.x1 = lnk_line.line.x2;
                             lnk_line.line.x2 = temp_x;
@@ -327,7 +390,8 @@ void merge_alot(list_t *out, int threshold, int theta_threshold)
                             y_diff_0 = (lnk_line.line.y2 - lnk_line.line.y1);
                         }
 
-                        if (y_diff_1 < 0) { // Make sure y slope is positive for the next part.
+                        if (y_diff_1 < 0) {
+                            // Make sure y slope is positive for the next part.
                             int temp_x = tmp_line.line.x1;
                             tmp_line.line.x1 = tmp_line.line.x2;
                             tmp_line.line.x2 = temp_x;
@@ -374,8 +438,7 @@ void merge_alot(list_t *out, int threshold, int theta_threshold)
 
 // http://www.brackeen.com/vga/source/djgpp20/lines.c.html
 // http://www.brackeen.com/vga/source/bc31/lines.c.html
-size_t trace_line(image_t *ptr, line_t *l, int *theta_buffer, uint32_t *mag_buffer, point_t *point_buffer)
-{
+size_t trace_line(image_t *ptr, line_t *l, int *theta_buffer, uint32_t *mag_buffer, point_t *point_buffer) {
     int dx = l->x2 - l->x1; // the horizontal distance of the line
     int dy = l->y2 - l->y1; // the vertical distance of the line
     int dxabs = abs(dx);
@@ -390,10 +453,13 @@ size_t trace_line(image_t *ptr, line_t *l, int *theta_buffer, uint32_t *mag_buff
     size_t index = 0;
 
     pixel_magnitude(ptr, px, py, theta_buffer + index, mag_buffer + index);
-    point_buffer[index++] = (point_t) {.x = px, .y = py};
+    point_buffer[index++] = (point_t) {
+        .x = px, .y = py
+    };
 
-    if (dxabs >= dyabs) { // the line is more horizontal than vertical
-        for(int i = 0; i < dxabs; i++) {
+    if (dxabs >= dyabs) {
+        // the line is more horizontal than vertical
+        for (int i = 0; i < dxabs; i++) {
             y += dyabs;
 
             if (y >= dxabs) {
@@ -404,10 +470,13 @@ size_t trace_line(image_t *ptr, line_t *l, int *theta_buffer, uint32_t *mag_buff
             px += sdx;
 
             pixel_magnitude(ptr, px, py, theta_buffer + index, mag_buffer + index);
-            point_buffer[index++] = (point_t) {.x = px, .y = py};
+            point_buffer[index++] = (point_t) {
+                .x = px, .y = py
+            };
         }
-    } else { // the line is more vertical than horizontal
-        for(int i = 0; i < dyabs; i++) {
+    } else {
+        // the line is more vertical than horizontal
+        for (int i = 0; i < dyabs; i++) {
             x += dxabs;
 
             if (x >= dyabs) {
@@ -418,7 +487,9 @@ size_t trace_line(image_t *ptr, line_t *l, int *theta_buffer, uint32_t *mag_buff
             py += sdy;
 
             pixel_magnitude(ptr, px, py, theta_buffer + index, mag_buffer + index);
-            point_buffer[index++] = (point_t) {.x = px, .y = py};
+            point_buffer[index++] = (point_t) {
+                .x = px, .y = py
+            };
         }
     }
 

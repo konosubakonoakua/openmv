@@ -1,10 +1,25 @@
 /*
- * This file is part of the OpenMV project.
+ * SPDX-License-Identifier: MIT
  *
- * Copyright (c) 2013-2023 Ibrahim Abdelkader <iabdalkader@openmv.io>
- * Copyright (c) 2013-2023 Kwabena W. Agyeman <kwagyeman@openmv.io>
+ * Copyright (C) 2013-2024 OpenMV, LLC.
  *
- * This work is licensed under the MIT license, see the file LICENSE for details.
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
  *
  * AWB Functions
  */
@@ -12,8 +27,7 @@
 
 #ifdef IMLIB_ENABLE_ISP_OPS
 
-static void imlib_rgb_avg(image_t *img, uint32_t *r_out, uint32_t *g_out, uint32_t *b_out)
-{
+void imlib_awb_rgb_avg(image_t *img, uint32_t *r_out, uint32_t *g_out, uint32_t *b_out) {
     uint32_t area = img->w * img->h;
     uint32_t r_acc = 0, g_acc = 0, b_acc = 0;
 
@@ -41,7 +55,7 @@ static void imlib_rgb_avg(image_t *img, uint32_t *r_out, uint32_t *g_out, uint32
             ptr = (uint16_t *) ptr32;
             #endif
 
-            for (; n > 0; n -= 1)  {
+            for (; n > 0; n -= 1) {
                 int pixel = *ptr++;
                 r_acc += COLOR_RGB565_TO_R5(pixel);
                 g_acc += COLOR_RGB565_TO_G6(pixel);
@@ -306,8 +320,7 @@ static void imlib_rgb_avg(image_t *img, uint32_t *r_out, uint32_t *g_out, uint32
     }
 }
 
-static void imlib_rgb_max(image_t *img, uint32_t *r_out, uint32_t *g_out, uint32_t *b_out)
-{
+void imlib_awb_rgb_max(image_t *img, uint32_t *r_out, uint32_t *g_out, uint32_t *b_out) {
     uint32_t area = img->w * img->h;
     uint32_t r_acc = 0, g_acc = 0, b_acc = 0;
 
@@ -350,14 +363,14 @@ static void imlib_rgb_max(image_t *img, uint32_t *r_out, uint32_t *g_out, uint32
             ptr = (uint16_t *) ptr32;
             #endif
 
-            for (; n > 0; n -= 1)  {
+            for (; n > 0; n -= 1) {
                 int pixel = *ptr++;
                 int r = COLOR_RGB565_TO_R5(pixel);
-                r_acc = (r > r_acc) ? r : r_acc; 
+                r_acc = (r > r_acc) ? r : r_acc;
                 int g = COLOR_RGB565_TO_G6(pixel);
-                g_acc = (g > g_acc) ? g : g_acc; 
+                g_acc = (g > g_acc) ? g : g_acc;
                 int b = COLOR_RGB565_TO_B5(pixel);
-                b_acc = (b > b_acc) ? b : b_acc; 
+                b_acc = (b > b_acc) ? b : b_acc;
             }
 
             break;
@@ -438,7 +451,7 @@ static void imlib_rgb_max(image_t *img, uint32_t *r_out, uint32_t *g_out, uint32
                             g_acc = (g > g_acc) ? g : g_acc;
                         } else {
                             int r = *ptr++;
-                            r_acc = (r > r_acc) ? r : r_acc; 
+                            r_acc = (r > r_acc) ? r : r_acc;
                         }
                     }
                 }
@@ -519,7 +532,7 @@ static void imlib_rgb_max(image_t *img, uint32_t *r_out, uint32_t *g_out, uint32
                     for (; n > 0; n -= 1) {
                         if (n % 2) {
                             int r = *ptr++;
-                            r_acc = (r > r_acc) ? r : r_acc; 
+                            r_acc = (r > r_acc) ? r : r_acc;
                         } else {
                             int g = *ptr++;
                             g_acc = (g > g_acc) ? g : g_acc;
@@ -568,7 +581,7 @@ static void imlib_rgb_max(image_t *img, uint32_t *r_out, uint32_t *g_out, uint32
                             g_acc = (g > g_acc) ? g : g_acc;
                         } else {
                             int r = *ptr++;
-                            r_acc = (r > r_acc) ? r : r_acc; 
+                            r_acc = (r > r_acc) ? r : r_acc;
                         }
                     }
                 } else {
@@ -649,7 +662,7 @@ static void imlib_rgb_max(image_t *img, uint32_t *r_out, uint32_t *g_out, uint32
                     for (; n > 0; n -= 1) {
                         if (n % 2) {
                             int r = *ptr++;
-                            r_acc = (r > r_acc) ? r : r_acc; 
+                            r_acc = (r > r_acc) ? r : r_acc;
                         } else {
                             int g = *ptr++;
                             g_acc = (g > g_acc) ? g : g_acc;
@@ -714,16 +727,8 @@ static void imlib_rgb_max(image_t *img, uint32_t *r_out, uint32_t *g_out, uint32
     }
 }
 
-void imlib_awb(image_t *img, bool max)
-{
+void imlib_awb(image_t *img, uint32_t r_out, uint32_t g_out, uint32_t b_out) {
     uint32_t area = img->w * img->h;
-    uint32_t r_out, g_out, b_out;
-
-    if (max) {
-        imlib_rgb_max(img, &r_out, &g_out, &b_out); // white patch algorithm
-    } else {
-        imlib_rgb_avg(img, &r_out, &g_out, &b_out); // gray world algorithm
-    }
 
     int red_gain = IM_DIV(g_out * 32, r_out);
     red_gain = IM_MIN(red_gain, 128);
@@ -749,7 +754,7 @@ void imlib_awb(image_t *img, bool max)
             ptr = (uint16_t *) ptr32;
             #endif
 
-            for (; n > 0; n -= 1)  {
+            for (; n > 0; n -= 1) {
                 int pixel = *ptr;
                 int r = __USAT_ASR(COLOR_RGB565_TO_R5(pixel) * red_gain, 5, 5);
                 int g = COLOR_RGB565_TO_G6(pixel);
@@ -965,17 +970,10 @@ void imlib_awb(image_t *img, bool max)
     }
 }
 
-void imlib_ccm(image_t *img, float *ccm, bool offset)
-{
-    float rr = ccm[0], rg = ccm[3], rb = ccm[6], ro = 0.f;
-    float gr = ccm[1], gg = ccm[4], gb = ccm[7], go = 0.f;
-    float br = ccm[2], bg = ccm[5], bb = ccm[8], bo = 0.f;
-
-    if (offset) {
-        ro = ccm[9];
-        go = ccm[10];
-        bo = ccm[11];
-    }
+void imlib_ccm(image_t *img, float *ccm, bool offset) {
+    float rr = ccm[0], rg = ccm[1], rb = ccm[2], ro = ccm[3];
+    float gr = ccm[4], gg = ccm[5], gb = ccm[6], go = ccm[7];
+    float br = ccm[8], bg = ccm[9], bb = ccm[10], bo = ccm[11];
 
     int i_rr = IM_MIN(fast_roundf(rr * 64), 1024);
     int i_rg = IM_MIN(fast_roundf(rg * 32), 512);
@@ -1052,9 +1050,8 @@ void imlib_ccm(image_t *img, float *ccm, bool offset)
     }
 }
 
-void imlib_gamma(image_t *img, float gamma, float contrast, float brightness)
-{
-    gamma = IM_DIV(1.0, gamma);
+void imlib_gamma(image_t *img, float gamma, float contrast, float brightness) {
+    gamma = IM_DIV(1.0f, gamma);
     switch (img->pixfmt) {
         case PIXFORMAT_BINARY: {
             float pScale = COLOR_BINARY_MAX - COLOR_BINARY_MIN;
@@ -1063,7 +1060,7 @@ void imlib_gamma(image_t *img, float gamma, float contrast, float brightness)
 
             for (int i = COLOR_BINARY_MIN; i <= COLOR_BINARY_MAX; i++) {
                 int p = ((fast_powf(i * pDiv, gamma) * contrast) + brightness) * pScale;
-                p_lut[i] = IM_MIN(IM_MAX(p , COLOR_BINARY_MIN), COLOR_BINARY_MAX);
+                p_lut[i] = __USAT(p, 1);
             }
 
             for (int y = 0, yy = img->h; y < yy; y++) {
@@ -1078,22 +1075,28 @@ void imlib_gamma(image_t *img, float gamma, float contrast, float brightness)
             fb_free();
             break;
         }
-        case PIXFORMAT_GRAYSCALE: {
+        case PIXFORMAT_GRAYSCALE:
+        case PIXFORMAT_BAYER_ANY:
+        case PIXFORMAT_YUV_ANY: {
             float pScale = COLOR_GRAYSCALE_MAX - COLOR_GRAYSCALE_MIN;
             float pDiv = 1 / pScale;
             int *p_lut = fb_alloc((COLOR_GRAYSCALE_MAX - COLOR_GRAYSCALE_MIN + 1) * sizeof(int), FB_ALLOC_NO_HINT);
 
             for (int i = COLOR_GRAYSCALE_MIN; i <= COLOR_GRAYSCALE_MAX; i++) {
                 int p = ((fast_powf(i * pDiv, gamma) * contrast) + brightness) * pScale;
-                p_lut[i] = IM_MIN(IM_MAX(p , COLOR_GRAYSCALE_MIN), COLOR_GRAYSCALE_MAX);
+                p_lut[i] = __USAT(p, 8);
             }
 
-            for (int y = 0, yy = img->h; y < yy; y++) {
-                uint8_t *data = IMAGE_COMPUTE_GRAYSCALE_PIXEL_ROW_PTR(img, y);
-                for (int x = 0, xx = img->w; x < xx; x++) {
-                    int dataPixel = IMAGE_GET_GRAYSCALE_PIXEL_FAST(data, x);
-                    int p = p_lut[dataPixel];
-                    IMAGE_PUT_GRAYSCALE_PIXEL_FAST(data, x, p);
+            uint8_t *ptr = (uint8_t *) img->data;
+            int n = img->w * img->h;
+
+            if (img->bpp == 2) {
+                for (; n > 0; n--, ptr += 2) {
+                    *ptr = p_lut[*ptr];
+                }
+            } else {
+                for (; n > 0; n--, ptr += 1) {
+                    *ptr = p_lut[*ptr];
                 }
             }
 
@@ -1113,28 +1116,28 @@ void imlib_gamma(image_t *img, float gamma, float contrast, float brightness)
 
             for (int i = COLOR_R5_MIN; i <= COLOR_R5_MAX; i++) {
                 int r = ((fast_powf(i * rDiv, gamma) * contrast) + brightness) * rScale;
-                r_lut[i] = IM_MIN(IM_MAX(r , COLOR_R5_MIN), COLOR_R5_MAX);
+                r_lut[i] = __USAT(r, 5);
             }
 
             for (int i = COLOR_G6_MIN; i <= COLOR_G6_MAX; i++) {
                 int g = ((fast_powf(i * gDiv, gamma) * contrast) + brightness) * gScale;
-                g_lut[i] = IM_MIN(IM_MAX(g , COLOR_G6_MIN), COLOR_G6_MAX);
+                g_lut[i] = __USAT(g, 6);
             }
 
             for (int i = COLOR_B5_MIN; i <= COLOR_B5_MAX; i++) {
                 int b = ((fast_powf(i * bDiv, gamma) * contrast) + brightness) * bScale;
-                b_lut[i] = IM_MIN(IM_MAX(b , COLOR_B5_MIN), COLOR_B5_MAX);
+                b_lut[i] = __USAT(b, 5);
             }
 
-            for (int y = 0, yy = img->h; y < yy; y++) {
-                uint16_t *data = IMAGE_COMPUTE_RGB565_PIXEL_ROW_PTR(img, y);
-                for (int x = 0, xx = img->w; x < xx; x++) {
-                    int dataPixel = IMAGE_GET_RGB565_PIXEL_FAST(data, x);
-                    int r = r_lut[COLOR_RGB565_TO_R5(dataPixel)];
-                    int g = g_lut[COLOR_RGB565_TO_G6(dataPixel)];
-                    int b = b_lut[COLOR_RGB565_TO_B5(dataPixel)];
-                    IMAGE_PUT_RGB565_PIXEL_FAST(data, x, COLOR_R5_G6_B5_TO_RGB565(r, g, b));
-                }
+            uint16_t *ptr = (uint16_t *) img->data;
+            int n = img->w * img->h;
+
+            for (; n > 0; n--) {
+                int dataPixel = *ptr;
+                int r = r_lut[COLOR_RGB565_TO_R5(dataPixel)];
+                int g = g_lut[COLOR_RGB565_TO_G6(dataPixel)];
+                int b = b_lut[COLOR_RGB565_TO_B5(dataPixel)];
+                *ptr++ = COLOR_R5_G6_B5_TO_RGB565(r, g, b);
             }
 
             fb_free();

@@ -1,33 +1,43 @@
 /*
- * This file is part of the OpenMV project.
+ * Copyright 2008-2010 (c) Jeff Brown <spadix@users.sourceforge.net>
  *
- * Copyright (c) 2013-2021 Ibrahim Abdelkader <iabdalkader@openmv.io>
- * Copyright (c) 2013-2021 Kwabena W. Agyeman <kwagyeman@openmv.io>
+ * This file is part of the ZBar Bar Code Reader.
  *
- * This work is licensed under the MIT license, see the file LICENSE for details.
+ * The ZBar Bar Code Reader is free software; you can redistribute it
+ * and/or modify it under the terms of the GNU Lesser Public License as
+ * published by the Free Software Foundation; either version 2.1 of
+ * the License, or (at your option) any later version.
  *
- * This file is part of the ZBar Bar Code Reader library.
+ * The ZBar Bar Code Reader is distributed in the hope that it will be
+ * useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+ * of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Lesser Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser Public License
+ * along with the ZBar Bar Code Reader; if not, write to the Free
+ * Software Foundation, Inc., 51 Franklin St, Fifth Floor,
+ * Boston, MA  02110-1301  USA
+ *
+ * http://sourceforge.net/projects/zbar
  */
 #include <limits.h>
 #include "imlib.h"
-#ifdef IMLIB_ENABLE_BARCODES
+#if defined(IMLIB_ENABLE_BARCODES) && (!defined(OMV_NO_GPL))
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-variable"
 #pragma GCC diagnostic ignored "-Wunused-but-set-variable"
 
-////////////////////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////////////////////
-
-#define free(ptr) ({ umm_free(ptr); })
-#define malloc(size) ({ void *_r = umm_malloc(size); if(!_r) fb_alloc_fail(); _r; })
-#define realloc(ptr, size) ({ void *_r = umm_realloc((ptr), (size)); if(!_r) fb_alloc_fail(); _r; })
-#define calloc(num, item_size) ({ void *_r = umm_calloc((num), (item_size)); if(!_r) fb_alloc_fail(); _r; })
+#define free(ptr)                                  ({ umm_free(ptr); })
+#define malloc(size)                               ({ void *_r = umm_malloc(size); if (!_r) fb_alloc_fail(); _r; })
+#define realloc(ptr, size)                         ({ void *_r = umm_realloc((ptr), (size)); if (!_r) fb_alloc_fail(); _r; })
+#define calloc(num,                                                                                                            \
+               item_size)                          ({ void *_r = umm_calloc((num), (item_size)); if (!_r) fb_alloc_fail(); _r; \
+                                                    })
 #undef assert
 #define assert(expression)
 #define zprintf(...)
-#define dbprintf(...) while(0)
-#define zassert(condition, retval, format, ...) do { if(!(condition)) return(retval); } while(0)
+#define dbprintf(...)                              while (0)
+#define zassert(condition, retval, format, ...)    do { if (!(condition)) return(retval); } while (0)
 
 #define zbar_image_write_png(...)
 #define svg_open(...)
@@ -49,6 +59,7 @@
 #define ENABLE_CODE128
 #define ENABLE_PDF417
 
+// *INDENT-OFF*
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 //////// "zbar.h"
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -6860,7 +6871,7 @@ static inline unsigned postprocess_c (zbar_decoder_t *dcode,
 {
     unsigned i, j;
 
-    /* expand buffer to accomodate 2x set C characters (2 digits per-char) */
+    /* expand buffer to accommodate 2x set C characters (2 digits per-char) */
     unsigned delta = end - start;
     unsigned newlen = dcode->code128.character + delta;
     size_buf(dcode, newlen);
@@ -8722,7 +8733,7 @@ void imlib_find_barcodes(list_t *out, image_t *ptr, rectangle_t *roi)
         img.h = roi->h;
         img.pixfmt = PIXFORMAT_GRAYSCALE;
         img.data = grayscale_image;
-        imlib_draw_image(&img, ptr, 0, 0, 1.f, 1.f, roi, -1, 256, NULL, NULL, 0, NULL, NULL);
+        imlib_draw_image(&img, ptr, 0, 0, 1.f, 1.f, roi, -1, 255, NULL, NULL, 0, NULL, NULL, NULL);
     }
 
     umm_init_x(fb_avail());
@@ -8865,4 +8876,4 @@ void imlib_find_barcodes(list_t *out, image_t *ptr, rectangle_t *roi)
 }
 
 #pragma GCC diagnostic pop
-#endif //IMLIB_ENABLE_BARCODES
+#endif //IMLIB_ENABLE_BARCODES *INDENT-ON*

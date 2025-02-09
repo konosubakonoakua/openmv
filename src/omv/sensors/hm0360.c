@@ -1,21 +1,36 @@
 /*
- * This file is part of the OpenMV project.
+ * SPDX-License-Identifier: MIT
  *
- * Copyright (c) 2013-2022 Ibrahim Abdelkader <iabdalkader@openmv.io>
- * Copyright (c) 2013-2022 Kwabena W. Agyeman <kwagyeman@openmv.io>
+ * Copyright (C) 2013-2024 OpenMV, LLC.
  *
- * This work is licensed under the MIT license, see the file LICENSE for details.
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
  *
  * HM0360 driver.
  */
 #include "omv_boardconfig.h"
-#if (OMV_ENABLE_HM0360 == 1)
+#if (OMV_HM0360_ENABLE == 1)
 
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include "cambus.h"
-#include "sensor.h"
+#include "omv_i2c.h"
+#include "omv_csi.h"
 #include "hm0360.h"
 #include "hm0360_regs.h"
 #include "py/mphal.h"
@@ -84,7 +99,7 @@ static const uint16_t default_regs[][2] = {
 
     {0x3112,            0x00},  // PCLKO_polarity falling
 
-    {PLL1_CONFIG,       0x08},  // Core = 24MHz PCLKO = 24MHz I2C = 12MHz
+    {PLL1_CONFIG,       OMV_HM0360_PLL1_CONFIG},  // Core = 24MHz PCLKO = 24MHz I2C = 12MHz
     {PLL2_CONFIG,       0x0A},  // MIPI pre-dev (default)
     {PLL3_CONFIG,       0x77},  // PMU/MIPI pre-dev (default)
 
@@ -100,8 +115,8 @@ static const uint16_t default_regs[][2] = {
     {AE_TARGET_ZONE,    0x23},  // AE target zone
     {CONVERGE_IN_TH,    0x03},  // AE converge in threshold
     {CONVERGE_OUT_TH,   0x05},  // AE converge out threshold
-    {MAX_INTG_H,        (HIMAX_FRAME_LENGTH_QVGA-4)>>8},
-    {MAX_INTG_L,        (HIMAX_FRAME_LENGTH_QVGA-4)&0xFF},
+    {MAX_INTG_H,        (HIMAX_FRAME_LENGTH_QVGA - 4) >> 8},
+    {MAX_INTG_L,        (HIMAX_FRAME_LENGTH_QVGA - 4) & 0xFF},
 
     {MAX_AGAIN,         0x04},  // Maximum analog gain
     {MAX_DGAIN_H,       0x03},
@@ -117,10 +132,10 @@ static const uint16_t default_regs[][2] = {
     {ROI_START_END_V,   0xF0},
     {ROI_START_END_H,   0xF0},
 
-    {FRAME_LEN_LINES_H, HIMAX_FRAME_LENGTH_QVGA>>8},
-    {FRAME_LEN_LINES_L, HIMAX_FRAME_LENGTH_QVGA&0xFF},
-    {LINE_LEN_PCK_H,    HIMAX_LINE_LEN_PCK_QVGA>>8},
-    {LINE_LEN_PCK_L,    HIMAX_LINE_LEN_PCK_QVGA&0xFF},
+    {FRAME_LEN_LINES_H, HIMAX_FRAME_LENGTH_QVGA >> 8},
+    {FRAME_LEN_LINES_L, HIMAX_FRAME_LENGTH_QVGA & 0xFF},
+    {LINE_LEN_PCK_H,    HIMAX_LINE_LEN_PCK_QVGA >> 8},
+    {LINE_LEN_PCK_L,    HIMAX_LINE_LEN_PCK_QVGA & 0xFF},
     {H_SUBSAMPLE,       0x01},
     {V_SUBSAMPLE,       0x01},
     {BINNING_MODE,      0x00},
@@ -323,18 +338,17 @@ static const uint16_t default_regs[][2] = {
     {0x0000,            0x00},
 };
 
-static int reset(sensor_t *sensor)
-{
-    // Reset sensor.
-    uint8_t reg=0xff;
-    for (int retry=HIMAX_BOOT_RETRY; retry >= 0 && reg != HIMAX_MODE_STANDBY; retry--) {
-        if (cambus_writeb2(&sensor->bus, sensor->slv_addr, SW_RESET, HIMAX_RESET) != 0) {
+static int reset(omv_csi_t *csi) {
+    // Reset csi.
+    uint8_t reg = 0xff;
+    for (int retry = HIMAX_BOOT_RETRY; retry >= 0 && reg != HIMAX_MODE_STANDBY; retry--) {
+        if (omv_i2c_writeb2(&csi->i2c_bus, csi->slv_addr, SW_RESET, HIMAX_RESET) != 0) {
             return -1;
         }
 
         mp_hal_delay_ms(1);
 
-        if (cambus_readb2(&sensor->bus, sensor->slv_addr, MODE_SELECT, &reg) != 0) {
+        if (omv_i2c_readb2(&csi->i2c_bus, csi->slv_addr, MODE_SELECT, &reg) != 0) {
             return -1;
         }
 
@@ -347,34 +361,31 @@ static int reset(sensor_t *sensor)
         mp_hal_delay_ms(10);
     }
 
-    // Write default regsiters
+    // Write default registers
     int ret = 0;
-    for (int i=0; default_regs[i][0] && ret == 0; i++) {
-        ret |= cambus_writeb2(&sensor->bus, sensor->slv_addr, default_regs[i][0], default_regs[i][1]);
+    for (int i = 0; default_regs[i][0] && ret == 0; i++) {
+        ret |= omv_i2c_writeb2(&csi->i2c_bus, csi->slv_addr, default_regs[i][0], default_regs[i][1]);
     }
 
     // Set mode to streaming
-    ret |= cambus_writeb2(&sensor->bus, sensor->slv_addr, MODE_SELECT, HIMAX_MODE_STREAMING);
+    ret |= omv_i2c_writeb2(&csi->i2c_bus, csi->slv_addr, MODE_SELECT, HIMAX_MODE_STREAMING);
 
     return ret;
 }
 
-static int read_reg(sensor_t *sensor, uint16_t reg_addr)
-{
+static int read_reg(omv_csi_t *csi, uint16_t reg_addr) {
     uint8_t reg_data;
-    if (cambus_readb2(&sensor->bus, sensor->slv_addr, reg_addr, &reg_data) != 0) {
+    if (omv_i2c_readb2(&csi->i2c_bus, csi->slv_addr, reg_addr, &reg_data) != 0) {
         return -1;
     }
     return reg_data;
 }
 
-static int write_reg(sensor_t *sensor, uint16_t reg_addr, uint16_t reg_data)
-{
-    return cambus_writeb2(&sensor->bus, sensor->slv_addr, reg_addr, reg_data);
+static int write_reg(omv_csi_t *csi, uint16_t reg_addr, uint16_t reg_data) {
+    return omv_i2c_writeb2(&csi->i2c_bus, csi->slv_addr, reg_addr, reg_data);
 }
 
-static int set_pixformat(sensor_t *sensor, pixformat_t pixformat)
-{
+static int set_pixformat(omv_csi_t *csi, pixformat_t pixformat) {
     switch (pixformat) {
         case PIXFORMAT_BAYER:
         case PIXFORMAT_GRAYSCALE:
@@ -390,12 +401,12 @@ static const uint16_t VGA_regs[][2] = {
     {V_SUBSAMPLE,           0x00},
     {BINNING_MODE,          0x00},
     {WIN_MODE,              0x00},
-    {MAX_INTG_H,            (HIMAX_FRAME_LENGTH_VGA-4)>>8},
-    {MAX_INTG_L,            (HIMAX_FRAME_LENGTH_VGA-4)&0xFF},
-    {FRAME_LEN_LINES_H,     (HIMAX_FRAME_LENGTH_VGA>>8)},
-    {FRAME_LEN_LINES_L,     (HIMAX_FRAME_LENGTH_VGA&0xFF)},
-    {LINE_LEN_PCK_H,        (HIMAX_LINE_LEN_PCK_VGA>>8)},
-    {LINE_LEN_PCK_L,        (HIMAX_LINE_LEN_PCK_VGA&0xFF)},
+    {MAX_INTG_H,            (HIMAX_FRAME_LENGTH_VGA - 4) >> 8},
+    {MAX_INTG_L,            (HIMAX_FRAME_LENGTH_VGA - 4) & 0xFF},
+    {FRAME_LEN_LINES_H,     (HIMAX_FRAME_LENGTH_VGA >> 8)},
+    {FRAME_LEN_LINES_L,     (HIMAX_FRAME_LENGTH_VGA & 0xFF)},
+    {LINE_LEN_PCK_H,        (HIMAX_LINE_LEN_PCK_VGA >> 8)},
+    {LINE_LEN_PCK_L,        (HIMAX_LINE_LEN_PCK_VGA & 0xFF)},
     {ROI_START_END_H,       0xF0},
     {ROI_START_END_V,       0xE0},
     {COMMAND_UPDATE,        0x01},
@@ -408,12 +419,12 @@ static const uint16_t QVGA_regs[][2] = {
     {V_SUBSAMPLE,           0x01},
     {BINNING_MODE,          0x00},
     {WIN_MODE,              0x00},
-    {MAX_INTG_H,            (HIMAX_FRAME_LENGTH_QVGA-4)>>8},
-    {MAX_INTG_L,            (HIMAX_FRAME_LENGTH_QVGA-4)&0xFF},
-    {FRAME_LEN_LINES_H,     (HIMAX_FRAME_LENGTH_QVGA>>8)},
-    {FRAME_LEN_LINES_L,     (HIMAX_FRAME_LENGTH_QVGA&0xFF)},
-    {LINE_LEN_PCK_H,        (HIMAX_LINE_LEN_PCK_QVGA>>8)},
-    {LINE_LEN_PCK_L,        (HIMAX_LINE_LEN_PCK_QVGA&0xFF)},
+    {MAX_INTG_H,            (HIMAX_FRAME_LENGTH_QVGA - 4) >> 8},
+    {MAX_INTG_L,            (HIMAX_FRAME_LENGTH_QVGA - 4) & 0xFF},
+    {FRAME_LEN_LINES_H,     (HIMAX_FRAME_LENGTH_QVGA >> 8)},
+    {FRAME_LEN_LINES_L,     (HIMAX_FRAME_LENGTH_QVGA & 0xFF)},
+    {LINE_LEN_PCK_H,        (HIMAX_LINE_LEN_PCK_QVGA >> 8)},
+    {LINE_LEN_PCK_L,        (HIMAX_LINE_LEN_PCK_QVGA & 0xFF)},
     {ROI_START_END_H,       0xF0},
     {ROI_START_END_V,       0xE0},
     {COMMAND_UPDATE,        0x01},
@@ -426,35 +437,34 @@ static const uint16_t QQVGA_regs[][2] = {
     {V_SUBSAMPLE,           0x02},
     {BINNING_MODE,          0x00},
     {WIN_MODE,              0x00},
-    {MAX_INTG_H,            (HIMAX_FRAME_LENGTH_QQVGA-4)>>8},
-    {MAX_INTG_L,            (HIMAX_FRAME_LENGTH_QQVGA-4)&0xFF},
-    {FRAME_LEN_LINES_H,     (HIMAX_FRAME_LENGTH_QQVGA>>8)},
-    {FRAME_LEN_LINES_L,     (HIMAX_FRAME_LENGTH_QQVGA&0xFF)},
-    {LINE_LEN_PCK_H,        (HIMAX_LINE_LEN_PCK_QQVGA>>8)},
-    {LINE_LEN_PCK_L,        (HIMAX_LINE_LEN_PCK_QQVGA&0xFF)},
+    {MAX_INTG_H,            (HIMAX_FRAME_LENGTH_QQVGA - 4) >> 8},
+    {MAX_INTG_L,            (HIMAX_FRAME_LENGTH_QQVGA - 4) & 0xFF},
+    {FRAME_LEN_LINES_H,     (HIMAX_FRAME_LENGTH_QQVGA >> 8)},
+    {FRAME_LEN_LINES_L,     (HIMAX_FRAME_LENGTH_QQVGA & 0xFF)},
+    {LINE_LEN_PCK_H,        (HIMAX_LINE_LEN_PCK_QQVGA >> 8)},
+    {LINE_LEN_PCK_L,        (HIMAX_LINE_LEN_PCK_QQVGA & 0xFF)},
     {ROI_START_END_H,       0xF0},
     {ROI_START_END_V,       0xD0},
     {COMMAND_UPDATE,        0x01},
     {0x0000,                0x00},
 };
 
-static int set_framesize(sensor_t *sensor, framesize_t framesize)
-{
-    int ret=0;
+static int set_framesize(omv_csi_t *csi, omv_csi_framesize_t framesize) {
+    int ret = 0;
     switch (framesize) {
-        case FRAMESIZE_VGA:
-            for (int i=0; VGA_regs[i][0] && ret == 0; i++) {
-                ret |= cambus_writeb2(&sensor->bus, sensor->slv_addr, VGA_regs[i][0], VGA_regs[i][1]);
+        case OMV_CSI_FRAMESIZE_VGA:
+            for (int i = 0; VGA_regs[i][0] && ret == 0; i++) {
+                ret |= omv_i2c_writeb2(&csi->i2c_bus, csi->slv_addr, VGA_regs[i][0], VGA_regs[i][1]);
             }
             break;
-        case FRAMESIZE_QVGA:
-            for (int i=0; QVGA_regs[i][0] && ret == 0; i++) {
-                ret |= cambus_writeb2(&sensor->bus, sensor->slv_addr, QVGA_regs[i][0], QVGA_regs[i][1]);
+        case OMV_CSI_FRAMESIZE_QVGA:
+            for (int i = 0; QVGA_regs[i][0] && ret == 0; i++) {
+                ret |= omv_i2c_writeb2(&csi->i2c_bus, csi->slv_addr, QVGA_regs[i][0], QVGA_regs[i][1]);
             }
             break;
-        case FRAMESIZE_QQVGA:
-            for (int i=0; QQVGA_regs[i][0] && ret == 0; i++) {
-                ret |= cambus_writeb2(&sensor->bus, sensor->slv_addr, QQVGA_regs[i][0], QQVGA_regs[i][1]);
+        case OMV_CSI_FRAMESIZE_QQVGA:
+            for (int i = 0; QQVGA_regs[i][0] && ret == 0; i++) {
+                ret |= omv_i2c_writeb2(&csi->i2c_bus, csi->slv_addr, QQVGA_regs[i][0], QQVGA_regs[i][1]);
             }
             break;
         default:
@@ -463,14 +473,13 @@ static int set_framesize(sensor_t *sensor, framesize_t framesize)
     return ret;
 }
 
-static int set_framerate(sensor_t *sensor, int framerate)
-{
+static int set_framerate(omv_csi_t *csi, int framerate) {
     int ret = 0;
     uint8_t pll_cfg = 0;
     uint8_t osc_div = 0;
-    bool    highres = false;
+    bool highres = false;
 
-    if (sensor->framesize == FRAMESIZE_VGA) {
+    if (csi->framesize == OMV_CSI_FRAMESIZE_VGA) {
         highres = true;
     }
 
@@ -485,13 +494,12 @@ static int set_framerate(sensor_t *sensor, int framerate)
         osc_div = (highres == true) ? 0x00 : 0x01;
     }
 
-    ret |= cambus_readb2(&sensor->bus, sensor->slv_addr, PLL1_CONFIG, &pll_cfg);
-    ret |= cambus_writeb2(&sensor->bus, sensor->slv_addr, PLL1_CONFIG, (pll_cfg & 0xFC) | osc_div);
+    ret |= omv_i2c_readb2(&csi->i2c_bus, csi->slv_addr, PLL1_CONFIG, &pll_cfg);
+    ret |= omv_i2c_writeb2(&csi->i2c_bus, csi->slv_addr, PLL1_CONFIG, (pll_cfg & 0xFC) | osc_div);
     return ret;
 }
 
-static int set_brightness(sensor_t *sensor, int level)
-{
+static int set_brightness(omv_csi_t *csi, int level) {
     uint8_t ae_mean;
     // Simulate brightness levels by setting AE loop target mean.
     switch (level) {
@@ -509,71 +517,66 @@ static int set_brightness(sensor_t *sensor, int level)
             ae_mean = 100;
             break;
     }
-    return cambus_writeb2(&sensor->bus, sensor->slv_addr, AE_TARGET_MEAN, ae_mean);
+    return omv_i2c_writeb2(&csi->i2c_bus, csi->slv_addr, AE_TARGET_MEAN, ae_mean);
 }
 
-static int set_gainceiling(sensor_t *sensor, gainceiling_t gainceiling)
-{
+static int set_gainceiling(omv_csi_t *csi, omv_csi_gainceiling_t gainceiling) {
     int ret = 0;
     int gain = 0x0;
     switch (gainceiling) {
-        case GAINCEILING_2X:
+        case OMV_CSI_GAINCEILING_2X:
             gain = 0x01;
             break;
-        case GAINCEILING_4X:
+        case OMV_CSI_GAINCEILING_4X:
             gain = 0x02;
             break;
-        case GAINCEILING_8X:
+        case OMV_CSI_GAINCEILING_8X:
             gain = 0x03;
             break;
-        case GAINCEILING_16X:
+        case OMV_CSI_GAINCEILING_16X:
             gain = 0x04;
             break;
         default:
             return -1;
     }
-    ret |= cambus_writeb2(&sensor->bus, sensor->slv_addr, MAX_AGAIN, (gain & 0x07));
+    ret |= omv_i2c_writeb2(&csi->i2c_bus, csi->slv_addr, MAX_AGAIN, (gain & 0x07));
     return ret;
 }
 
-static int set_colorbar(sensor_t *sensor, int enable)
-{
-    return cambus_writeb2(&sensor->bus, sensor->slv_addr, TEST_PATTERN_MODE, enable & 0x1);
+static int set_colorbar(omv_csi_t *csi, int enable) {
+    return omv_i2c_writeb2(&csi->i2c_bus, csi->slv_addr, TEST_PATTERN_MODE, enable & 0x1);
 }
 
-static int set_auto_gain(sensor_t *sensor, int enable, float gain_db, float gain_db_ceiling)
-{
+static int set_auto_gain(omv_csi_t *csi, int enable, float gain_db, float gain_db_ceiling) {
     uint8_t ae_ctrl = 0;
-    int ret = cambus_readb2(&sensor->bus, sensor->slv_addr, AE_CTRL, &ae_ctrl);
+    int ret = omv_i2c_readb2(&csi->i2c_bus, csi->slv_addr, AE_CTRL, &ae_ctrl);
     if (!enable && (!isnanf(gain_db)) && (!isinff(gain_db))) {
-        gain_db = IM_MAX(IM_MIN(gain_db, 24.0f), 0.0f);
-        uint8_t gain = fast_ceilf(fast_log2(fast_expf((gain_db / 20.0f) * fast_log(10.0f))));
-        ret |= cambus_writeb2(&sensor->bus, sensor->slv_addr, AE_CTRL, (ae_ctrl & 0xFE));
-        ret |= cambus_writeb2(&sensor->bus, sensor->slv_addr, ANALOG_GAIN, ((gain & 0x7)<<4));
+        gain_db = IM_CLAMP(gain_db, 0.0f, 24.0f);
+        uint8_t gain = fast_ceilf(logf(expf((gain_db / 20.0f) * M_LN10)) / M_LN2);
+        ret |= omv_i2c_writeb2(&csi->i2c_bus, csi->slv_addr, AE_CTRL, (ae_ctrl & 0xFE));
+        ret |= omv_i2c_writeb2(&csi->i2c_bus, csi->slv_addr, ANALOG_GAIN, ((gain & 0x7) << 4));
     } else if (enable && (!isnanf(gain_db_ceiling)) && (!isinff(gain_db_ceiling))) {
-        gain_db_ceiling = IM_MAX(IM_MIN(gain_db_ceiling, 24.0f), 0.0f);
-        uint8_t gain = fast_ceilf(fast_log2(fast_expf((gain_db_ceiling / 20.0f) * fast_log(10.0f))));
-        ret |= cambus_writeb2(&sensor->bus, sensor->slv_addr, MAX_AGAIN, (gain & 0x07));
-        ret |= cambus_writeb2(&sensor->bus, sensor->slv_addr, AE_CTRL, (ae_ctrl | 0x01));
+        gain_db_ceiling = IM_CLAMP(gain_db_ceiling, 0.0f, 24.0f);
+        uint8_t gain = fast_ceilf(logf(expf((gain_db_ceiling / 20.0f) * M_LN10)) / M_LN2);
+        ret |= omv_i2c_writeb2(&csi->i2c_bus, csi->slv_addr, MAX_AGAIN, (gain & 0x07));
+        ret |= omv_i2c_writeb2(&csi->i2c_bus, csi->slv_addr, AE_CTRL, (ae_ctrl | 0x01));
     }
-    ret |= cambus_writeb2(&sensor->bus, sensor->slv_addr, COMMAND_UPDATE, 0x01);
+    ret |= omv_i2c_writeb2(&csi->i2c_bus, csi->slv_addr, COMMAND_UPDATE, 0x01);
     return ret;
 }
 
-static int get_gain_db(sensor_t *sensor, float *gain_db)
-{
+static int get_gain_db(omv_csi_t *csi, float *gain_db) {
     uint8_t gain;
-    if (cambus_readb2(&sensor->bus, sensor->slv_addr, ANALOG_GAIN, &gain) != 0) {
+    if (omv_i2c_readb2(&csi->i2c_bus, csi->slv_addr, ANALOG_GAIN, &gain) != 0) {
         return -1;
     }
-    *gain_db = fast_floorf(fast_log(1 << (gain>>4)) / fast_log(10.0f) * 20.0f);
+    *gain_db = fast_floorf(log10f(1 << (gain >> 4)) * 20.0f);
     return 0;
 }
 
-static int get_vt_pix_clk(sensor_t *sensor, uint32_t *vt_pix_clk)
-{
+static int get_vt_pix_clk(omv_csi_t *csi, uint32_t *vt_pix_clk) {
     uint8_t reg;
-    if (cambus_readb2(&sensor->bus, sensor->slv_addr, PLL1_CONFIG, &reg) != 0) {
+    if (omv_i2c_readb2(&csi->i2c_bus, csi->slv_addr, PLL1_CONFIG, &reg) != 0) {
         return -1;
     }
     // 00 -> MCLK / 1
@@ -583,33 +586,32 @@ static int get_vt_pix_clk(sensor_t *sensor, uint32_t *vt_pix_clk)
     uint32_t vt_sys_div = (1 << (reg & 0x03));
 
     // vt_pix_clk = MCLK / vt_sys_div
-    *vt_pix_clk = OMV_XCLK_FREQUENCY / vt_sys_div;
+    *vt_pix_clk = OMV_CSI_CLK_FREQUENCY / vt_sys_div;
     return 0;
 }
 
-static int set_auto_exposure(sensor_t *sensor, int enable, int exposure_us)
-{
+static int set_auto_exposure(omv_csi_t *csi, int enable, int exposure_us) {
     uint8_t ae_ctrl = 0;
-    int ret = cambus_readb2(&sensor->bus, sensor->slv_addr, AE_CTRL, &ae_ctrl);
+    int ret = omv_i2c_readb2(&csi->i2c_bus, csi->slv_addr, AE_CTRL, &ae_ctrl);
 
     if (enable) {
-        ret |= cambus_writeb2(&sensor->bus, sensor->slv_addr, AE_CTRL, (ae_ctrl | 0x01));
+        ret |= omv_i2c_writeb2(&csi->i2c_bus, csi->slv_addr, AE_CTRL, (ae_ctrl | 0x01));
     } else {
         uint32_t line_len;
         uint32_t frame_len;
         uint32_t coarse_int;
         uint32_t vt_pix_clk = 0;
 
-        switch (sensor->framesize) {
-            case FRAMESIZE_VGA:
+        switch (csi->framesize) {
+            case OMV_CSI_FRAMESIZE_VGA:
                 line_len = HIMAX_LINE_LEN_PCK_VGA;
                 frame_len = HIMAX_FRAME_LENGTH_VGA;
                 break;
-            case FRAMESIZE_QVGA:
+            case OMV_CSI_FRAMESIZE_QVGA:
                 line_len = HIMAX_LINE_LEN_PCK_QVGA;
                 frame_len = HIMAX_FRAME_LENGTH_QVGA;
                 break;
-            case FRAMESIZE_QQVGA:
+            case OMV_CSI_FRAMESIZE_QQVGA:
                 line_len = HIMAX_LINE_LEN_PCK_QQVGA;
                 frame_len = HIMAX_FRAME_LENGTH_QQVGA;
                 break;
@@ -617,87 +619,83 @@ static int set_auto_exposure(sensor_t *sensor, int enable, int exposure_us)
                 return -1;
         }
 
-        ret |= get_vt_pix_clk(sensor, &vt_pix_clk);
+        ret |= get_vt_pix_clk(csi, &vt_pix_clk);
         coarse_int = fast_roundf(exposure_us * (vt_pix_clk / 1000000.0f) / line_len);
 
         if (coarse_int < 2) {
             coarse_int = 2;
-        } else if (coarse_int > (frame_len-4)) {
-            coarse_int = frame_len-4;
+        } else if (coarse_int > (frame_len - 4)) {
+            coarse_int = frame_len - 4;
         }
 
-        ret |= cambus_writeb2(&sensor->bus, sensor->slv_addr, AE_CTRL, (ae_ctrl & 0xFE));
-        ret |= cambus_writeb2(&sensor->bus, sensor->slv_addr, INTEGRATION_H, coarse_int>>8);
-        ret |= cambus_writeb2(&sensor->bus, sensor->slv_addr, INTEGRATION_L, coarse_int&0xff);
-        ret |= cambus_writeb2(&sensor->bus, sensor->slv_addr, COMMAND_UPDATE, 0x01);
+        ret |= omv_i2c_writeb2(&csi->i2c_bus, csi->slv_addr, AE_CTRL, (ae_ctrl & 0xFE));
+        ret |= omv_i2c_writeb2(&csi->i2c_bus, csi->slv_addr, INTEGRATION_H, coarse_int >> 8);
+        ret |= omv_i2c_writeb2(&csi->i2c_bus, csi->slv_addr, INTEGRATION_L, coarse_int & 0xff);
+        ret |= omv_i2c_writeb2(&csi->i2c_bus, csi->slv_addr, COMMAND_UPDATE, 0x01);
     }
 
     return ret;
 }
 
-static int get_exposure_us(sensor_t *sensor, int *exposure_us)
-{
+static int get_exposure_us(omv_csi_t *csi, int *exposure_us) {
     int ret = 0;
     uint32_t line_len;
     uint32_t coarse_int = 0;
     uint32_t vt_pix_clk = 0;
-    switch (sensor->framesize) {
-        case FRAMESIZE_VGA:
+    switch (csi->framesize) {
+        case OMV_CSI_FRAMESIZE_VGA:
             line_len = HIMAX_LINE_LEN_PCK_VGA;
             break;
-        case FRAMESIZE_QVGA:
+        case OMV_CSI_FRAMESIZE_QVGA:
             line_len = HIMAX_LINE_LEN_PCK_QVGA;
             break;
-        case FRAMESIZE_QQVGA:
+        case OMV_CSI_FRAMESIZE_QQVGA:
             line_len = HIMAX_LINE_LEN_PCK_QQVGA;
             break;
         default:
             return -1;
     }
-    ret |= get_vt_pix_clk(sensor, &vt_pix_clk);
-    ret |= cambus_readb2(&sensor->bus, sensor->slv_addr, INTEGRATION_H, &((uint8_t*)&coarse_int)[1]);
-    ret |= cambus_readb2(&sensor->bus, sensor->slv_addr, INTEGRATION_L, &((uint8_t*)&coarse_int)[0]);
+    ret |= get_vt_pix_clk(csi, &vt_pix_clk);
+    ret |= omv_i2c_readb2(&csi->i2c_bus, csi->slv_addr, INTEGRATION_H, &((uint8_t *) &coarse_int)[1]);
+    ret |= omv_i2c_readb2(&csi->i2c_bus, csi->slv_addr, INTEGRATION_L, &((uint8_t *) &coarse_int)[0]);
     *exposure_us = fast_roundf(coarse_int * line_len / (vt_pix_clk / 1000000.0f));
     return ret;
 }
 
-static int set_hmirror(sensor_t *sensor, int enable)
-{
+static int set_hmirror(omv_csi_t *csi, int enable) {
     uint8_t reg;
-    int ret = cambus_readb2(&sensor->bus, sensor->slv_addr, IMG_ORIENTATION, &reg);
-    ret |= cambus_writeb2(&sensor->bus, sensor->slv_addr, IMG_ORIENTATION, HIMAX_SET_HMIRROR(reg, enable)) ;
-    ret |= cambus_writeb2(&sensor->bus, sensor->slv_addr, COMMAND_UPDATE, 0x01);
+    int ret = omv_i2c_readb2(&csi->i2c_bus, csi->slv_addr, IMG_ORIENTATION, &reg);
+    ret |= omv_i2c_writeb2(&csi->i2c_bus, csi->slv_addr, IMG_ORIENTATION, HIMAX_SET_HMIRROR(reg, enable));
+    ret |= omv_i2c_writeb2(&csi->i2c_bus, csi->slv_addr, COMMAND_UPDATE, 0x01);
     return ret;
 }
 
-static int set_vflip(sensor_t *sensor, int enable)
-{
+static int set_vflip(omv_csi_t *csi, int enable) {
     uint8_t reg;
-    int ret = cambus_readb2(&sensor->bus, sensor->slv_addr, IMG_ORIENTATION, &reg);
-    ret |= cambus_writeb2(&sensor->bus, sensor->slv_addr, IMG_ORIENTATION, HIMAX_SET_VMIRROR(reg, enable)) ;
-    ret |= cambus_writeb2(&sensor->bus, sensor->slv_addr, COMMAND_UPDATE, 0x01);
+    int ret = omv_i2c_readb2(&csi->i2c_bus, csi->slv_addr, IMG_ORIENTATION, &reg);
+    ret |= omv_i2c_writeb2(&csi->i2c_bus, csi->slv_addr, IMG_ORIENTATION, HIMAX_SET_VMIRROR(reg, enable));
+    ret |= omv_i2c_writeb2(&csi->i2c_bus, csi->slv_addr, COMMAND_UPDATE, 0x01);
     return ret;
 }
 
-static int ioctl(sensor_t *sensor, int request, va_list ap)
-{
+static int ioctl(omv_csi_t *csi, int request, va_list ap) {
     int ret = 0;
 
     switch (request) {
-        case IOCTL_HIMAX_OSC_ENABLE: {
+        case OMV_CSI_IOCTL_HIMAX_OSC_ENABLE: {
             break;
         }
 
-        case IOCTL_HIMAX_MD_ENABLE: {
+        case OMV_CSI_IOCTL_HIMAX_MD_ENABLE: {
             int ret = 0;
             uint8_t md_ctrl = 0;
             uint32_t enable = va_arg(ap, uint32_t) & 0x01;
-            ret |= cambus_readb2(&sensor->bus, sensor->slv_addr, MD_CTRL, &md_ctrl);
-            ret |= cambus_writeb2(&sensor->bus, sensor->slv_addr, MD_CTRL, (md_ctrl & 0xFE) | enable);
+            ret |= omv_i2c_readb2(&csi->i2c_bus, csi->slv_addr, MD_CTRL, &md_ctrl);
+            ret |= omv_i2c_writeb2(&csi->i2c_bus, csi->slv_addr, MD_CTRL, (md_ctrl & 0xFE) | enable);
             break;
         }
 
-        case IOCTL_HIMAX_MD_WINDOW: {
+        case OMV_CSI_IOCTL_HIMAX_MD_WINDOW: {
             int ret = 0;
             int32_t roi_w = 0;
             int32_t roi_h = 0;
@@ -708,18 +706,18 @@ static int ioctl(sensor_t *sensor, int request, va_list ap)
             int32_t x2 = va_arg(ap, int32_t) + x1;
             int32_t y2 = va_arg(ap, int32_t) + y1;
 
-            switch (sensor->framesize) {
-                case FRAMESIZE_VGA:
+            switch (csi->framesize) {
+                case OMV_CSI_FRAMESIZE_VGA:
                     roi_w = HIMAX_MD_ROI_VGA_W;
                     roi_h = HIMAX_MD_ROI_VGA_H;
                     roi_max_h = 14;
                     break;
-                case FRAMESIZE_QVGA:
+                case OMV_CSI_FRAMESIZE_QVGA:
                     roi_w = HIMAX_MD_ROI_QVGA_W;
                     roi_h = HIMAX_MD_ROI_QVGA_H;
                     roi_max_h = 14;
                     break;
-                case FRAMESIZE_QQVGA:
+                case OMV_CSI_FRAMESIZE_QQVGA:
                     roi_w = HIMAX_MD_ROI_QQVGA_W;
                     roi_h = HIMAX_MD_ROI_QQVGA_H;
                     roi_max_h = 13;
@@ -732,21 +730,21 @@ static int ioctl(sensor_t *sensor, int request, va_list ap)
             y1 = MAX((y1 / roi_h - 1), 0);
             x2 = MIN((x2 / roi_w) + !!(x2 % roi_w), 0xF);
             y2 = MIN((y2 / roi_h) + !!(y2 % roi_h), roi_max_h);
-            ret |= cambus_writeb2(&sensor->bus, sensor->slv_addr, ROI_START_END_H, ((x2 & 0xF) << 4) |  (x1 & 0x0F));
-            ret |= cambus_writeb2(&sensor->bus, sensor->slv_addr, ROI_START_END_V, ((y2 & 0xF) << 4) |  (y1 & 0x0F));
+            ret |= omv_i2c_writeb2(&csi->i2c_bus, csi->slv_addr, ROI_START_END_H, ((x2 & 0xF) << 4) | (x1 & 0x0F));
+            ret |= omv_i2c_writeb2(&csi->i2c_bus, csi->slv_addr, ROI_START_END_V, ((y2 & 0xF) << 4) | (y1 & 0x0F));
             break;
         }
 
-        case IOCTL_HIMAX_MD_THRESHOLD: {
+        case OMV_CSI_IOCTL_HIMAX_MD_THRESHOLD: {
             uint32_t threshold = va_arg(ap, uint32_t) & 0x3F;
-            ret |= cambus_writeb2(&sensor->bus, sensor->slv_addr, MD_TH_STR_L, threshold);
-            ret |= cambus_writeb2(&sensor->bus, sensor->slv_addr, MD_TH_STR_H, threshold);
-            ret |= cambus_writeb2(&sensor->bus, sensor->slv_addr, MD_LIGHT_COEF, threshold);
+            ret |= omv_i2c_writeb2(&csi->i2c_bus, csi->slv_addr, MD_TH_STR_L, threshold);
+            ret |= omv_i2c_writeb2(&csi->i2c_bus, csi->slv_addr, MD_TH_STR_H, threshold);
+            ret |= omv_i2c_writeb2(&csi->i2c_bus, csi->slv_addr, MD_LIGHT_COEF, threshold);
             break;
         }
 
-        case IOCTL_HIMAX_MD_CLEAR: {
-            ret = cambus_writeb2(&sensor->bus, sensor->slv_addr, INT_CLEAR, (1 << 3));
+        case OMV_CSI_IOCTL_HIMAX_MD_CLEAR: {
+            ret = omv_i2c_writeb2(&csi->i2c_bus, csi->slv_addr, INT_CLEAR, (1 << 3));
             break;
         }
 
@@ -759,34 +757,32 @@ static int ioctl(sensor_t *sensor, int request, va_list ap)
     return ret;
 }
 
-int hm0360_init(sensor_t *sensor)
-{
-    // Initialize sensor structure.
-    sensor->reset               = reset;
-    sensor->read_reg            = read_reg;
-    sensor->write_reg           = write_reg;
-    sensor->set_pixformat       = set_pixformat;
-    sensor->set_framesize       = set_framesize;
-    sensor->set_framerate       = set_framerate;
-    sensor->set_brightness      = set_brightness;
-    sensor->set_gainceiling     = set_gainceiling;
-    sensor->set_colorbar        = set_colorbar;
-    sensor->set_auto_gain       = set_auto_gain;
-    sensor->get_gain_db         = get_gain_db;
-    sensor->set_auto_exposure   = set_auto_exposure;
-    sensor->get_exposure_us     = get_exposure_us;
-    sensor->set_hmirror         = set_hmirror;
-    sensor->set_vflip           = set_vflip;
-    sensor->ioctl               = ioctl;
+int hm0360_init(omv_csi_t *csi) {
+    // Initialize csi structure.
+    csi->reset = reset;
+    csi->read_reg = read_reg;
+    csi->write_reg = write_reg;
+    csi->set_pixformat = set_pixformat;
+    csi->set_framesize = set_framesize;
+    csi->set_framerate = set_framerate;
+    csi->set_brightness = set_brightness;
+    csi->set_gainceiling = set_gainceiling;
+    csi->set_colorbar = set_colorbar;
+    csi->set_auto_gain = set_auto_gain;
+    csi->get_gain_db = get_gain_db;
+    csi->set_auto_exposure = set_auto_exposure;
+    csi->get_exposure_us = get_exposure_us;
+    csi->set_hmirror = set_hmirror;
+    csi->set_vflip = set_vflip;
+    csi->ioctl = ioctl;
 
-    // Set sensor flags
-    sensor->hw_flags.vsync      = 0;
-    sensor->hw_flags.hsync      = 0;
-    sensor->hw_flags.pixck      = 0;
-    sensor->hw_flags.fsync      = 0;
-    sensor->hw_flags.jpege      = 0;
-    sensor->hw_flags.gs_bpp     = 1;
+    // Set csi flags
+    csi->vsync_pol = 0;
+    csi->hsync_pol = 0;
+    csi->pixck_pol = 0;
+    csi->frame_sync = 0;
+    csi->mono_bpp = 1;
 
     return 0;
 }
-#endif //(OMV_ENABLE_HM0360 == 1)
+#endif //(OMV_HM0360_ENABLE == 1)

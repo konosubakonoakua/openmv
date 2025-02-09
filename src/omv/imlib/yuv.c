@@ -1,17 +1,39 @@
 /*
- * This file is part of the OpenMV project.
+ * SPDX-License-Identifier: MIT
  *
- * Copyright (c) 2013-2021 Ibrahim Abdelkader <iabdalkader@openmv.io>
- * Copyright (c) 2013-2021 Kwabena W. Agyeman <kwagyeman@openmv.io>
+ * Copyright (C) 2013-2024 OpenMV, LLC.
  *
- * This work is licensed under the MIT license, see the file LICENSE for details.
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
  *
  * Deyuv Functions
  */
 #include "imlib.h"
 
-void imlib_deyuv_line(int x_start, int x_end, int y_row, void *dst_row_ptr, pixformat_t pixfmt, image_t *src)
-{
+pixformat_t imlib_yuv_shift(pixformat_t pixfmt, int x) {
+    if (x % 2) {
+        return (pixfmt == PIXFORMAT_YUV422) ? PIXFORMAT_YVU422 : PIXFORMAT_YUV422;
+    }
+
+    return pixfmt;
+}
+
+void imlib_deyuv_line(int x_start, int x_end, int y_row, void *dst_row_ptr, pixformat_t pixfmt, image_t *src) {
     int shift = (src->pixfmt == PIXFORMAT_YUV422) ? 16 : 0;
     int src_w = src->w, w_limit = src_w - 1;
 
@@ -78,17 +100,17 @@ void imlib_deyuv_line(int x_start, int x_end, int y_row, void *dst_row_ptr, pixf
                 int by = (227 * v) >> 7;
 
                 int r0 = y0 + ry, g0 = y0 - gy, b0 = y0 + by;
-                r0 = IM_MIN(IM_MAX(r0, COLOR_R8_MIN), COLOR_R8_MAX);
-                g0 = IM_MIN(IM_MAX(g0, COLOR_G8_MIN), COLOR_G8_MAX);
-                b0 = IM_MIN(IM_MAX(b0, COLOR_B8_MIN), COLOR_B8_MAX);
+                r0 = __USAT(r0, 8);
+                g0 = __USAT(g0, 8);
+                b0 = __USAT(b0, 8);
                 int rgb565_0 = COLOR_R8_G8_B8_TO_RGB565(r0, g0, b0);
                 IMAGE_PUT_RGB565_PIXEL_FAST(row_ptr_16, x, rgb565_0);
 
                 if (x != w_limit) {
                     int r1 = y1 + ry, g1 = y1 - gy, b1 = y1 + by;
-                    r1 = IM_MIN(IM_MAX(r1, COLOR_R8_MIN), COLOR_R8_MAX);
-                    g1 = IM_MIN(IM_MAX(g1, COLOR_G8_MIN), COLOR_G8_MAX);
-                    b1 = IM_MIN(IM_MAX(b1, COLOR_B8_MIN), COLOR_B8_MAX);
+                    r1 = __USAT(r1, 8);
+                    g1 = __USAT(g1, 8);
+                    b1 = __USAT(b1, 8);
                     int rgb565_1 = COLOR_R8_G8_B8_TO_RGB565(r1, g1, b1);
                     IMAGE_PUT_RGB565_PIXEL_FAST(row_ptr_16, x + 1, rgb565_1);
                 }
@@ -102,8 +124,7 @@ void imlib_deyuv_line(int x_start, int x_end, int y_row, void *dst_row_ptr, pixf
     }
 }
 
-void imlib_deyuv_image(image_t *dst, image_t *src)
-{
+void imlib_deyuv_image(image_t *dst, image_t *src) {
     for (int y = 0, src_w = src->w, src_h = src->h; y < src_h; y++) {
         void *row_ptr = NULL;
 
